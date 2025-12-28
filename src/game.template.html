@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knight Moves Trainer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .btn {
+            padding: 15px 40px;
+            font-size: 1.3em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 10px;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Chessboard */
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            width: 400px;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .timer {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        .timer.urgent {
+            animation: blinkRed 0.5s infinite;
+        }
+
+        @keyframes blinkRed {
+            0%, 100% { color: #ff0000; }
+            50% { color: #ff6666; }
+        }
+
+        .score {
+            font-size: 1.2em;
+        }
+
+        .chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 50px);
+            grid-template-rows: repeat(8, 50px);
+            border: 3px solid #8b4513;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .square {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 36px;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            user-select: none;
+        }
+
+        .square.light {
+            background-color: #f0d9b5;
+        }
+
+        .square.dark {
+            background-color: #b58863;
+        }
+
+        .square.selected {
+            background-color: #7fff7f !important;
+        }
+
+        .square.correct {
+            background-color: #90EE90 !important;
+        }
+
+        .square.incorrect {
+            background-color: #ff6b6b !important;
+        }
+
+        .square.missed {
+            background-color: #ffd700 !important;
+        }
+
+        .square.flash-success {
+            animation: successFlash 0.6s ease-out;
+        }
+
+        @keyframes successFlash {
+            0% { background-color: #00ff00; transform: scale(1.1); }
+            100% { background-color: #90EE90; transform: scale(1); }
+        }
+
+        .round-complete {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3em;
+            font-weight: bold;
+            color: #00ff00;
+            -webkit-text-stroke: 2px black;
+            text-shadow:
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                2px 2px 0 #000,
+                0 0 20px #00ff00,
+                0 0 40px #00ff00;
+            z-index: 10;
+            animation: popIn 0.5s ease-out;
+        }
+
+        @keyframes popIn {
+            0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+            50% { transform: translate(-50%, -50%) scale(1.2); }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+
+        .game-container {
+            position: relative;
+        }
+
+        .knight {
+            font-size: 57px;
+            color: #ffffff;
+            -webkit-text-stroke: 2px #000000;
+            text-shadow:
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                2px 2px 0 #000;
+            filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.6));
+            position: relative;
+            top: -8px;
+        }
+
+        /* End screen */
+        .final-score {
+            font-size: 3em;
+            margin: 20px 0;
+            color: #ffd700;
+        }
+
+        .dancing-gif {
+            width: 200px;
+            margin: 20px 0;
+        }
+
+        .highscores {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            min-width: 300px;
+        }
+
+        .highscores h2 {
+            margin-bottom: 15px;
+            color: #ffd700;
+        }
+
+        .highscore-entry {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .highscore-entry:last-child {
+            border-bottom: none;
+        }
+
+        .instructions {
+            max-width: 500px;
+            margin: 20px 0;
+            line-height: 1.6;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <!-- Splash Screen -->
+    <div id="splash-screen" class="screen active">
+        <h1>Knight Moves Trainer</h1>
+        <p class="instructions">
+            A knight on a chessboard will appear. Click all the squares the knight can attack!
+            <br><br>
+            You have <strong>30 seconds</strong> per round.
+            <br>
+            +1 point for each correct square, -1 for mistakes.
+        </p>
+        <button class="btn" onclick="startGame()">Play</button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+        <div class="game-container">
+            <div class="game-info">
+                <div class="timer">Time: <span id="timer">10</span>s</div>
+                <div class="score">Score: <span id="score">0</span></div>
+            </div>
+            <div class="chessboard" id="chessboard"></div>
+        </div>
+    </div>
+
+    <!-- End Screen -->
+    <div id="end-screen" class="screen">
+        <h1>Round Complete!</h1>
+        <div class="final-score">Score: <span id="final-score">0</span></div>
+        <img class="dancing-gif" id="dancing-gif" alt="Dancing celebration">
+        <div class="highscores">
+            <h2>High Scores</h2>
+            <div id="highscore-list"></div>
+        </div>
+        <button class="btn" onclick="startGame()">Play Again</button>
+    </div>
+
+    <!-- Audio elements -->
+    <audio id="buzzer-sound" preload="auto"></audio>
+    <audio id="joy-sound" preload="auto"></audio>
+    <audio id="applause-sound" preload="auto"></audio>
+
+    <script>
+        // Base64 encoded assets (injected by build script)
+        const ASSETS = {
+            buzzer: 'data:audio/mp3;base64,{{BUZZER_BASE64}}',
+            joy: 'data:audio/mp3;base64,{{JOY_BASE64}}',
+            applause: 'data:audio/mp3;base64,{{APPLAUSE_BASE64}}',
+            dancing: 'data:image/gif;base64,{{DANCING_BASE64}}'
+        };
+
+        // Game state
+        let knightPosition = null;
+        let validMoves = [];
+        let clickedSquares = new Set();
+        let score = 0;
+        let correctClicks = 0;
+        let timerInterval = null;
+        let timeLeft = 10;
+        let gameActive = false;
+
+        // Initialize audio
+        function initAudio() {
+            document.getElementById('buzzer-sound').src = ASSETS.buzzer;
+            document.getElementById('joy-sound').src = ASSETS.joy;
+            document.getElementById('applause-sound').src = ASSETS.applause;
+            document.getElementById('dancing-gif').src = ASSETS.dancing;
+        }
+
+        // Play sound
+        function playSound(id) {
+            const sound = document.getElementById(id);
+            sound.currentTime = 0;
+            sound.play().catch(e => console.log('Audio play failed:', e));
+        }
+
+        // Calculate valid knight moves
+        function getKnightMoves(row, col) {
+            const moves = [];
+            const offsets = [
+                [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                [1, -2], [1, 2], [2, -1], [2, 1]
+            ];
+
+            for (const [dr, dc] of offsets) {
+                const newRow = row + dr;
+                const newCol = col + dc;
+                if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                    moves.push({ row: newRow, col: newCol });
+                }
+            }
+            return moves;
+        }
+
+        // Create chessboard
+        function createBoard() {
+            const board = document.getElementById('chessboard');
+            board.innerHTML = '';
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = 'square ' + ((row + col) % 2 === 0 ? 'light' : 'dark');
+                    square.dataset.row = row;
+                    square.dataset.col = col;
+                    square.onclick = () => handleSquareClick(row, col, square);
+                    board.appendChild(square);
+                }
+            }
+        }
+
+        // Place knight on random square
+        function placeKnight() {
+            const row = Math.floor(Math.random() * 8);
+            const col = Math.floor(Math.random() * 8);
+            knightPosition = { row, col };
+            validMoves = getKnightMoves(row, col);
+
+            const index = row * 8 + col;
+            const squares = document.querySelectorAll('.square');
+            squares[index].innerHTML = '<span class="knight">&#9822;</span>';
+        }
+
+        // Handle square click
+        function handleSquareClick(row, col, square) {
+            if (!gameActive) return;
+            if (row === knightPosition.row && col === knightPosition.col) return;
+
+            const key = `${row},${col}`;
+            if (clickedSquares.has(key)) return;
+
+            clickedSquares.add(key);
+
+            const isValid = validMoves.some(m => m.row === row && m.col === col);
+
+            if (isValid) {
+                square.classList.add('selected');
+                score++;
+                correctClicks++;
+
+                // Check if all valid moves found - celebrate and start new round!
+                if (correctClicks >= validMoves.length) {
+                    showRoundComplete();
+                }
+            } else {
+                square.classList.add('incorrect');
+                score--;
+                playSound('buzzer-sound');
+            }
+
+            document.getElementById('score').textContent = score;
+        }
+
+        // Show round complete celebration
+        function showRoundComplete() {
+            // Flash all the correctly clicked squares
+            const selectedSquares = document.querySelectorAll('.square.selected');
+            selectedSquares.forEach(sq => sq.classList.add('flash-success'));
+
+            // Show "Nice!" message
+            const msg = document.createElement('div');
+            msg.className = 'round-complete';
+            msg.textContent = 'Nice!';
+            document.querySelector('.game-container').appendChild(msg);
+
+            // Remove message and start new round
+            setTimeout(() => {
+                msg.remove();
+                newRound();
+            }, 700);
+        }
+
+        // Start a new round (new knight position)
+        function newRound() {
+            if (!gameActive) return;
+            clickedSquares.clear();
+            correctClicks = 0;
+            createBoard();
+            placeKnight();
+        }
+
+        // Show results
+        function showResults() {
+            const squares = document.querySelectorAll('.square');
+
+            // Mark missed squares
+            for (const move of validMoves) {
+                const key = `${move.row},${move.col}`;
+                if (!clickedSquares.has(key)) {
+                    const index = move.row * 8 + move.col;
+                    squares[index].classList.add('missed');
+                }
+            }
+        }
+
+        // Update timer
+        function updateTimer() {
+            timeLeft--;
+            document.getElementById('timer').textContent = timeLeft;
+
+            if (timeLeft <= 5) {
+                document.querySelector('.timer').classList.add('urgent');
+            }
+
+            if (timeLeft <= 0) {
+                endGame();
+            }
+        }
+
+        // Start game
+        function startGame() {
+            // Reset state
+            score = 0;
+            correctClicks = 0;
+            timeLeft = 30;
+            clickedSquares.clear();
+            gameActive = true;
+
+            // Update UI
+            document.getElementById('score').textContent = score;
+            document.getElementById('timer').textContent = timeLeft;
+            document.querySelector('.timer').classList.remove('urgent');
+
+            // Switch screens
+            document.getElementById('splash-screen').classList.remove('active');
+            document.getElementById('end-screen').classList.remove('active');
+            document.getElementById('game-screen').classList.add('active');
+
+            // Setup board
+            createBoard();
+            placeKnight();
+
+            // Start timer
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+
+        // End game
+        function endGame() {
+            gameActive = false;
+            clearInterval(timerInterval);
+
+            showResults();
+
+            // Wait a moment to show results, then switch to end screen
+            setTimeout(() => {
+                // Save high score
+                saveHighScore(score);
+
+                // Update end screen
+                document.getElementById('final-score').textContent = score;
+                displayHighScores();
+
+                // Play celebration sounds
+                playSound('joy-sound');
+                playSound('applause-sound');
+
+                // Switch screens
+                document.getElementById('game-screen').classList.remove('active');
+                document.getElementById('end-screen').classList.add('active');
+            }, 1500);
+        }
+
+        // High score functions
+        function getHighScores() {
+            const scores = sessionStorage.getItem('knightTrainerScores');
+            if (scores) {
+                return JSON.parse(scores);
+            }
+            // Initialize with 5 zeros
+            const initial = [
+                { score: 0 },
+                { score: 0 },
+                { score: 0 },
+                { score: 0 },
+                { score: 0 }
+            ];
+            sessionStorage.setItem('knightTrainerScores', JSON.stringify(initial));
+            return initial;
+        }
+
+        function saveHighScore(newScore) {
+            const scores = getHighScores();
+            scores.push({ score: newScore });
+            scores.sort((a, b) => b.score - a.score);
+            const top5 = scores.slice(0, 5);
+            sessionStorage.setItem('knightTrainerScores', JSON.stringify(top5));
+        }
+
+        function displayHighScores() {
+            const scores = getHighScores();
+            const list = document.getElementById('highscore-list');
+
+            if (scores.length === 0) {
+                list.innerHTML = '<p>No scores yet!</p>';
+                return;
+            }
+
+            list.innerHTML = scores.map((entry, i) => `
+                <div class="highscore-entry">
+                    <span>#${i + 1}</span>
+                    <span>${entry.score} pts</span>
+                </div>
+            `).join('');
+        }
+
+        // Initialize on load
+        window.onload = function() {
+            initAudio();
+        };
+    </script>
+</body>
+</html>
