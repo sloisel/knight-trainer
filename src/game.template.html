@@ -241,6 +241,47 @@
             top: -8px;
         }
 
+        .knight.blink {
+            animation: knightBlink 0.4s ease-in-out 3;
+        }
+
+        @keyframes knightBlink {
+            0%, 100% { color: #ffffff; }
+            50% { color: #ff0000; }
+        }
+
+        .square.blink-square.light {
+            animation: squareBlinkLight 0.4s ease-in-out 3;
+        }
+
+        .square.blink-square.dark {
+            animation: squareBlinkDark 0.4s ease-in-out 3;
+        }
+
+        @keyframes squareBlinkLight {
+            0%, 100% { background-color: #f0d9b5; }
+            50% { background-color: #ffff00; }
+        }
+
+        @keyframes squareBlinkDark {
+            0%, 100% { background-color: #b58863; }
+            50% { background-color: #ffff00; }
+        }
+
+        .black-piece {
+            font-size: 57px;
+            color: #000000;
+            -webkit-text-stroke: 1px #ffffff;
+            text-shadow:
+                -1px -1px 0 #fff,
+                1px -1px 0 #fff,
+                -1px 1px 0 #fff,
+                1px 1px 0 #fff;
+            filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.6));
+            position: relative;
+            top: -8px;
+        }
+
         /* End screen */
         .final-score {
             font-size: 3em;
@@ -371,6 +412,85 @@
         let timerInterval = null;
         let timeLeft = 10;
         let gameActive = false;
+        let blackPieces = [];
+
+        // Piece symbols (filled black versions)
+        const PIECES = {
+            king: '♚',
+            queen: '♛',
+            rook: '♜',
+            bishop: '♝',
+            knight: '♞',
+            pawn: '♟'
+        };
+
+        // Generate random black pieces
+        function generateBlackPieces(excludeRow, excludeCol) {
+            const pieces = [];
+            const occupied = new Set();
+            occupied.add(`${excludeRow},${excludeCol}`);
+
+            // Track counts
+            let rooks = 0, bishops = 0, knights = 0, queens = 0;
+            const pawnCols = new Set();
+
+            // Always place exactly one king
+            let kingPlaced = false;
+            while (!kingPlaced) {
+                const row = Math.floor(Math.random() * 8);
+                const col = Math.floor(Math.random() * 8);
+                const key = `${row},${col}`;
+                if (!occupied.has(key)) {
+                    pieces.push({ row, col, piece: PIECES.king });
+                    occupied.add(key);
+                    kingPlaced = true;
+                }
+            }
+
+            // Randomly add other pieces (5-12 total pieces)
+            const targetPieces = 5 + Math.floor(Math.random() * 8);
+            let attempts = 0;
+
+            while (pieces.length < targetPieces && attempts < 100) {
+                attempts++;
+                const row = Math.floor(Math.random() * 8);
+                const col = Math.floor(Math.random() * 8);
+                const key = `${row},${col}`;
+
+                if (occupied.has(key)) continue;
+
+                // Pick a random piece type
+                const pieceType = Math.random();
+
+                if (pieceType < 0.4) {
+                    // Pawn (most common)
+                    // No pawn on queening square (row 0 for black), one per column
+                    if (row !== 0 && !pawnCols.has(col)) {
+                        pieces.push({ row, col, piece: PIECES.pawn });
+                        occupied.add(key);
+                        pawnCols.add(col);
+                    }
+                } else if (pieceType < 0.55 && rooks < 2) {
+                    pieces.push({ row, col, piece: PIECES.rook });
+                    occupied.add(key);
+                    rooks++;
+                } else if (pieceType < 0.7 && bishops < 2) {
+                    pieces.push({ row, col, piece: PIECES.bishop });
+                    occupied.add(key);
+                    bishops++;
+                } else if (pieceType < 0.85 && knights < 2) {
+                    pieces.push({ row, col, piece: PIECES.knight });
+                    occupied.add(key);
+                    knights++;
+                } else if (queens < 1) {
+                    pieces.push({ row, col, piece: PIECES.queen });
+                    occupied.add(key);
+                    queens++;
+                }
+            }
+
+            return pieces;
+        }
 
         // Initialize audio
         function initAudio() {
@@ -430,9 +550,21 @@
             knightPosition = { row, col };
             validMoves = getKnightMoves(row, col);
 
-            const index = row * 8 + col;
+            // Generate black pieces (avoiding knight's position)
+            blackPieces = generateBlackPieces(row, col);
+
             const squares = document.querySelectorAll('.square');
-            squares[index].innerHTML = '<span class="knight">&#9822;</span>';
+
+            // Place the white knight
+            const knightIndex = row * 8 + col;
+            squares[knightIndex].innerHTML = '<span class="knight blink">&#9822;</span>';
+            squares[knightIndex].classList.add('blink-square');
+
+            // Place black pieces
+            for (const bp of blackPieces) {
+                const index = bp.row * 8 + bp.col;
+                squares[index].innerHTML = `<span class="black-piece">${bp.piece}</span>`;
+            }
         }
 
         // Handle square click
