@@ -235,6 +235,16 @@
             position: relative;
         }
 
+        .arrow-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
         .knight {
             font-family: 'Noto Sans Symbols 2', sans-serif;
             font-size: 55px;
@@ -381,6 +391,7 @@
                 <div class="timer">Time: <span id="timer">10</span>s</div>
                 <div class="score">Score: <span id="score">0</span></div>
             </div>
+            <svg id="arrow-overlay" class="arrow-overlay"></svg>
             <div class="board-wrapper">
                 <div class="file-labels">
                     <span class="corner"></span>
@@ -581,6 +592,68 @@
             sound.play().catch(e => console.log('Audio play failed:', e));
         }
 
+        // Draw arrow from knight to target square
+        function drawArrow(fromRow, fromCol, toRow, toCol) {
+            const svg = document.getElementById('arrow-overlay');
+            const board = document.getElementById('chessboard');
+            const boardRect = board.getBoundingClientRect();
+            const containerRect = document.querySelector('.game-container').getBoundingClientRect();
+
+            // Calculate offset of board within container
+            const offsetX = boardRect.left - containerRect.left;
+            const offsetY = boardRect.top - containerRect.top;
+
+            // Square size
+            const squareSize = 50;
+
+            // Calculate center of squares
+            const x1 = offsetX + fromCol * squareSize + squareSize / 2;
+            const y1 = offsetY + fromRow * squareSize + squareSize / 2;
+            const x2 = offsetX + toCol * squareSize + squareSize / 2;
+            const y2 = offsetY + toRow * squareSize + squareSize / 2;
+
+            // Create arrow line
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', x1);
+            line.setAttribute('y1', y1);
+            line.setAttribute('x2', x2);
+            line.setAttribute('y2', y2);
+            line.setAttribute('stroke', 'rgba(0, 200, 0, 0.8)');
+            line.setAttribute('stroke-width', '4');
+            line.setAttribute('marker-end', 'url(#arrowhead)');
+            line.classList.add('arrow-line');
+
+            svg.appendChild(line);
+        }
+
+        // Clear all arrows
+        function clearArrows() {
+            const svg = document.getElementById('arrow-overlay');
+            const lines = svg.querySelectorAll('.arrow-line');
+            lines.forEach(line => line.remove());
+        }
+
+        // Initialize arrow marker
+        function initArrowMarker() {
+            const svg = document.getElementById('arrow-overlay');
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arrowhead');
+            marker.setAttribute('markerWidth', '10');
+            marker.setAttribute('markerHeight', '7');
+            marker.setAttribute('refX', '9');
+            marker.setAttribute('refY', '3.5');
+            marker.setAttribute('orient', 'auto');
+
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
+            polygon.setAttribute('fill', 'rgba(0, 200, 0, 0.8)');
+
+            marker.appendChild(polygon);
+            defs.appendChild(marker);
+            svg.appendChild(defs);
+        }
+
         // Calculate valid knight moves
         function getKnightMoves(row, col) {
             const moves = [];
@@ -668,6 +741,9 @@
                 score++;
                 correctClicks++;
 
+                // Draw arrow from knight to this square
+                drawArrow(knightPosition.row, knightPosition.col, row, col);
+
                 // Check if all valid moves found - celebrate and start new round!
                 if (correctClicks >= validMoves.length) {
                     showRoundComplete();
@@ -705,6 +781,7 @@
             if (!gameActive) return;
             clickedSquares.clear();
             correctClicks = 0;
+            clearArrows();
             createBoard();
             placeKnight();
         }
@@ -744,6 +821,7 @@
             correctClicks = 0;
             timeLeft = 30;
             clickedSquares.clear();
+            clearArrows();
             gameActive = true;
 
             // Update UI
@@ -853,6 +931,7 @@
         // Initialize on load
         window.onload = function() {
             initAudio();
+            initArrowMarker();
         };
     </script>
 </body>
