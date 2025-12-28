@@ -429,63 +429,101 @@
             const pieces = [];
             const occupied = new Set();
             occupied.add(`${excludeRow},${excludeCol}`);
+            const castleZone = new Set();
 
-            // Track counts
-            let rooks = 0, bishops = 0, knights = 0, queens = 0;
-            const pawnCols = new Set();
-
-            // Always place exactly one king
-            let kingPlaced = false;
-            while (!kingPlaced) {
-                const row = Math.floor(Math.random() * 8);
-                const col = Math.floor(Math.random() * 8);
+            function place(row, col, piece) {
                 const key = `${row},${col}`;
                 if (!occupied.has(key)) {
-                    pieces.push({ row, col, piece: PIECES.king });
+                    pieces.push({ row, col, piece });
                     occupied.add(key);
-                    kingPlaced = true;
+                    return true;
+                }
+                return false;
+            }
+
+            // Randomly choose kingside or queenside castle
+            const kingsideCastle = Math.random() < 0.5;
+            let castlePawnCols;
+            if (kingsideCastle) {
+                // King on g8 (0,6), Rook on f8 (0,5)
+                place(0, 6, PIECES.king);
+                place(0, 5, PIECES.rook);
+                // Other rook on a8
+                place(0, 0, PIECES.rook);
+                // Castle pawns: f, g, h (cols 5, 6, 7)
+                castlePawnCols = [5, 6, 7];
+                // Castle zone: f8, g8, h8, f7, g7, h7
+                for (const c of [5, 6, 7]) {
+                    castleZone.add(`0,${c}`);
+                    castleZone.add(`1,${c}`);
+                }
+            } else {
+                // King on c8 (0,2), Rook on d8 (0,3)
+                place(0, 2, PIECES.king);
+                place(0, 3, PIECES.rook);
+                // Other rook on h8
+                place(0, 7, PIECES.rook);
+                // Castle pawns: a, b, c (cols 0, 1, 2)
+                castlePawnCols = [0, 1, 2];
+                // Castle zone: a8, b8, c8, d8, a7, b7, c7
+                for (const c of [0, 1, 2, 3]) {
+                    castleZone.add(`0,${c}`);
+                }
+                for (const c of [0, 1, 2]) {
+                    castleZone.add(`1,${c}`);
                 }
             }
 
-            // Randomly add other pieces (5-12 total pieces)
-            const targetPieces = 5 + Math.floor(Math.random() * 8);
-            let attempts = 0;
+            // Place all 8 pawns, one per column
+            for (let col = 0; col < 8; col++) {
+                if (castlePawnCols.includes(col)) {
+                    // Castle pawns on starting row
+                    place(1, col, PIECES.pawn);
+                } else if (col === 3 || col === 4) {
+                    // d/e pawns: random row 2-6 (not starting, not queening)
+                    const row = 2 + Math.floor(Math.random() * 5);
+                    place(row, col, PIECES.pawn);
+                } else {
+                    // Other pawns: random row 1-6 (can be starting, not queening)
+                    const row = 1 + Math.floor(Math.random() * 6);
+                    place(row, col, PIECES.pawn);
+                }
+            }
 
-            while (pieces.length < targetPieces && attempts < 100) {
+            // Place 2 bishops on opposite colors
+            let bishopPlaced = [false, false]; // [light, dark]
+            let attempts = 0;
+            while ((!bishopPlaced[0] || !bishopPlaced[1]) && attempts < 100) {
+                attempts++;
+                const row = Math.floor(Math.random() * 8);
+                const col = Math.floor(Math.random() * 8);
+                const key = `${row},${col}`;
+                const squareColor = (row + col) % 2;
+
+                if (occupied.has(key) || castleZone.has(key)) continue;
+                if (bishopPlaced[squareColor]) continue;
+
+                if (place(row, col, PIECES.bishop)) {
+                    bishopPlaced[squareColor] = true;
+                }
+            }
+
+            // Place 2 knights and 1 queen
+            let knights = 0, queens = 0;
+            attempts = 0;
+
+            while ((knights < 2 || queens < 1) && attempts < 100) {
                 attempts++;
                 const row = Math.floor(Math.random() * 8);
                 const col = Math.floor(Math.random() * 8);
                 const key = `${row},${col}`;
 
-                if (occupied.has(key)) continue;
+                if (occupied.has(key) || castleZone.has(key)) continue;
 
-                // Pick a random piece type
-                const pieceType = Math.random();
-
-                if (pieceType < 0.4) {
-                    // Pawn (most common)
-                    // No pawn on queening square (row 0 for black), one per column
-                    if (row !== 0 && !pawnCols.has(col)) {
-                        pieces.push({ row, col, piece: PIECES.pawn });
-                        occupied.add(key);
-                        pawnCols.add(col);
-                    }
-                } else if (pieceType < 0.55 && rooks < 2) {
-                    pieces.push({ row, col, piece: PIECES.rook });
-                    occupied.add(key);
-                    rooks++;
-                } else if (pieceType < 0.7 && bishops < 2) {
-                    pieces.push({ row, col, piece: PIECES.bishop });
-                    occupied.add(key);
-                    bishops++;
-                } else if (pieceType < 0.85 && knights < 2) {
-                    pieces.push({ row, col, piece: PIECES.knight });
-                    occupied.add(key);
-                    knights++;
+                if (knights < 2) {
+                    if (place(row, col, PIECES.knight)) knights++;
                 } else if (queens < 1) {
-                    pieces.push({ row, col, piece: PIECES.queen });
-                    occupied.add(key);
-                    queens++;
+                    if (place(row, col, PIECES.queen)) queens++;
                 }
             }
 
