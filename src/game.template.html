@@ -13,6 +13,7 @@
     <meta name="theme-color" content="#1a1a2e">
     <link rel="apple-touch-icon" href="data:image/svg+xml;base64,{{ICON_BASE64}}">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{{ICON_BASE64}}">
+    <link rel="manifest" href="manifest.json">
     <style>
         * {
             margin: 0;
@@ -237,8 +238,11 @@
                 -2px 2px 0 #000,
                 2px 2px 0 #000;
             filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.6));
-            position: relative;
-            top: -8px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
         }
 
         .knight.blink {
@@ -278,8 +282,11 @@
                 -1px 1px 0 #fff,
                 1px 1px 0 #fff;
             filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.6));
-            position: relative;
-            top: -8px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
         }
 
         /* End screen */
@@ -415,13 +422,14 @@
         let blackPieces = [];
 
         // Piece symbols (filled black versions)
+        // Adding \uFE0E (variation selector 15) forces text rendering instead of emoji on iOS
         const PIECES = {
-            king: '♚',
-            queen: '♛',
-            rook: '♜',
-            bishop: '♝',
-            knight: '♞',
-            pawn: '♟'
+            king: '♚\uFE0E',
+            queen: '♛\uFE0E',
+            rook: '♜\uFE0E',
+            bishop: '♝\uFE0E',
+            knight: '♞\uFE0E',
+            pawn: '♟\uFE0E'
         };
 
         // Generate random black pieces

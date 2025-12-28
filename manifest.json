@@ -1,0 +1,18 @@
+{
+  "name": "Knight Moves Trainer",
+  "short_name": "Knight Trainer",
+  "description": "Learn and practice knight moves in chess",
+  "start_url": "/knight-trainer/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
