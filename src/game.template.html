@@ -763,7 +763,7 @@
 
         // High score functions
         function getHighScores() {
-            const scores = sessionStorage.getItem('knightTrainerScores');
+            const scores = localStorage.getItem('knightTrainerScores');
             if (scores) {
                 return JSON.parse(scores);
             }
@@ -775,7 +775,7 @@
                 { score: 0 },
                 { score: 0 }
             ];
-            sessionStorage.setItem('knightTrainerScores', JSON.stringify(initial));
+            localStorage.setItem('knightTrainerScores', JSON.stringify(initial));
             return initial;
         }
 
@@ -784,7 +784,7 @@
             scores.push({ score: newScore });
             scores.sort((a, b) => b.score - a.score);
             const top5 = scores.slice(0, 5);
-            sessionStorage.setItem('knightTrainerScores', JSON.stringify(top5));
+            localStorage.setItem('knightTrainerScores', JSON.stringify(top5));
         }
 
         function displayHighScores() {
