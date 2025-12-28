@@ -15,6 +15,13 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{{ICON_BASE64}}">
     <link rel="manifest" href="manifest.json">
     <style>
+        @font-face {
+            font-family: 'Noto Sans Symbols 2';
+            src: url('data:font/ttf;base64,{{FONT_BASE64}}') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -229,7 +236,8 @@
         }
 
         .knight {
-            font-size: 57px;
+            font-family: 'Noto Sans Symbols 2', sans-serif;
+            font-size: 55px;
             color: #ffffff;
             -webkit-text-stroke: 2px #000000;
             text-shadow:
@@ -239,10 +247,9 @@
                 2px 2px 0 #000;
             filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.6));
             line-height: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
+            position: relative;
+            top: 8px;
+            pointer-events: none;
         }
 
         .knight.blink {
@@ -273,7 +280,8 @@
         }
 
         .black-piece {
-            font-size: 57px;
+            font-family: 'Noto Sans Symbols 2', sans-serif;
+            font-size: 55px;
             color: #000000;
             -webkit-text-stroke: 1px #ffffff;
             text-shadow:
@@ -283,10 +291,9 @@
                 1px 1px 0 #fff;
             filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.6));
             line-height: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
+            position: relative;
+            top: 8px;
+            pointer-events: none;
         }
 
         /* End screen */
@@ -337,6 +344,7 @@
     <!-- Splash Screen -->
     <div id="splash-screen" class="screen active">
         <h1>Knight Moves Trainer</h1>
+        <p style="margin-bottom: 10px; color: #aaa;">By S. Loisel</p>
         <p class="instructions">
             A knight on a chessboard will appear. Click all the squares the knight can attack!
             <br><br>
@@ -433,10 +441,9 @@
         };
 
         // Generate random black pieces
-        function generateBlackPieces(excludeRow, excludeCol) {
+        function generateBlackPieces() {
             const pieces = [];
             const occupied = new Set();
-            occupied.add(`${excludeRow},${excludeCol}`);
             const castleZone = new Set();
 
             function place(row, col, piece) {
@@ -591,13 +598,24 @@
 
         // Place knight on random square
         function placeKnight() {
-            const row = Math.floor(Math.random() * 8);
-            const col = Math.floor(Math.random() * 8);
+            // Generate black pieces first
+            blackPieces = generateBlackPieces();
+
+            // Build set of occupied squares
+            const occupied = new Set();
+            for (const bp of blackPieces) {
+                occupied.add(`${bp.row},${bp.col}`);
+            }
+
+            // Find empty square for knight
+            let row, col;
+            do {
+                row = Math.floor(Math.random() * 8);
+                col = Math.floor(Math.random() * 8);
+            } while (occupied.has(`${row},${col}`));
+
             knightPosition = { row, col };
             validMoves = getKnightMoves(row, col);
-
-            // Generate black pieces (avoiding knight's position)
-            blackPieces = generateBlackPieces(row, col);
 
             const squares = document.querySelectorAll('.square');
 
