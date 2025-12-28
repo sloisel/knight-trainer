@@ -20,6 +20,11 @@ A mini-game to help learn and visualize knight moves in chess.
 
 Works as a standalone webpage. On iPad/iPhone, use "Add to Home Screen" for an app-like experience.
 
+## Credits
+
+Music: "I Got a Stick Arr Bryan Teoh" by Kevin MacLeod (incompetech.com)
+Licensed under [Creative Commons: By Attribution 4.0](http://creativecommons.org/licenses/by/4.0/)
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.

@@ -27,6 +27,7 @@ cat "$ASSETS_DIR/joy.mp3" | base64 | tr -d '\n' > "$TMPDIR/joy.b64"
 cat "$ASSETS_DIR/SMALL_CROWD_APPLAUSE-Yannick_Lemieux-recompressed.mp3" | base64 | tr -d '\n' > "$TMPDIR/applause.b64"
 cat "$ASSETS_DIR/images/dancing.gif" | base64 | tr -d '\n' > "$TMPDIR/dancing.b64"
 cat "$ASSETS_DIR/icon.svg" | base64 | tr -d '\n' > "$TMPDIR/icon.b64"
+cat "$ASSETS_DIR/I Got a Stick Arr Bryan Teoh.mp3" | base64 | tr -d '\n' > "$TMPDIR/jingle.b64"
 
 echo "Injecting assets into template..."
 
@@ -43,6 +44,7 @@ replacements = {
     "{{APPLAUSE_BASE64}}": open("$TMPDIR/applause.b64").read(),
     "{{DANCING_BASE64}}": open("$TMPDIR/dancing.b64").read(),
     "{{ICON_BASE64}}": open("$TMPDIR/icon.b64").read(),
+    "{{JINGLE_BASE64}}": open("$TMPDIR/jingle.b64").read(),
 }
 
 for placeholder, value in replacements.items():

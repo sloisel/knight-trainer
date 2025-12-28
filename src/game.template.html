@@ -99,6 +99,51 @@
             font-size: 1.2em;
         }
 
+        .board-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .board-with-ranks {
+            display: flex;
+            align-items: stretch;
+        }
+
+        .rank-labels {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            padding: 0 5px;
+            font-size: 14px;
+            color: #ccc;
+        }
+
+        .rank-labels span {
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+        }
+
+        .file-labels {
+            display: flex;
+            justify-content: center;
+            padding: 5px 0;
+            font-size: 14px;
+            color: #ccc;
+        }
+
+        .file-labels span {
+            width: 50px;
+            text-align: center;
+        }
+
+        .file-labels span.corner {
+            width: 25px;
+        }
+
         .chessboard {
             display: grid;
             grid-template-columns: repeat(8, 50px);
@@ -148,8 +193,8 @@
         }
 
         @keyframes successFlash {
-            0% { background-color: #00ff00; transform: scale(1.1); }
-            100% { background-color: #90EE90; transform: scale(1); }
+            0% { background-color: #00ff00; transform: scale(1.1); box-shadow: inset 0 0 0 4px #000; }
+            100% { background-color: #90EE90; transform: scale(1); box-shadow: none; }
         }
 
         .round-complete {
@@ -261,7 +306,31 @@
                 <div class="timer">Time: <span id="timer">10</span>s</div>
                 <div class="score">Score: <span id="score">0</span></div>
             </div>
-            <div class="chessboard" id="chessboard"></div>
+            <div class="board-wrapper">
+                <div class="file-labels">
+                    <span class="corner"></span>
+                    <span>a</span><span>b</span><span>c</span><span>d</span>
+                    <span>e</span><span>f</span><span>g</span><span>h</span>
+                    <span class="corner"></span>
+                </div>
+                <div class="board-with-ranks">
+                    <div class="rank-labels">
+                        <span>8</span><span>7</span><span>6</span><span>5</span>
+                        <span>4</span><span>3</span><span>2</span><span>1</span>
+                    </div>
+                    <div class="chessboard" id="chessboard"></div>
+                    <div class="rank-labels">
+                        <span>8</span><span>7</span><span>6</span><span>5</span>
+                        <span>4</span><span>3</span><span>2</span><span>1</span>
+                    </div>
+                </div>
+                <div class="file-labels">
+                    <span class="corner"></span>
+                    <span>a</span><span>b</span><span>c</span><span>d</span>
+                    <span>e</span><span>f</span><span>g</span><span>h</span>
+                    <span class="corner"></span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -281,6 +350,7 @@
     <audio id="buzzer-sound" preload="auto"></audio>
     <audio id="joy-sound" preload="auto"></audio>
     <audio id="applause-sound" preload="auto"></audio>
+    <audio id="jingle-sound" preload="auto"></audio>
 
     <script>
         // Base64 encoded assets (injected by build script)
@@ -288,7 +358,8 @@
             buzzer: 'data:audio/mp3;base64,{{BUZZER_BASE64}}',
             joy: 'data:audio/mp3;base64,{{JOY_BASE64}}',
             applause: 'data:audio/mp3;base64,{{APPLAUSE_BASE64}}',
-            dancing: 'data:image/gif;base64,{{DANCING_BASE64}}'
+            dancing: 'data:image/gif;base64,{{DANCING_BASE64}}',
+            jingle: 'data:audio/mp3;base64,{{JINGLE_BASE64}}'
         };
 
         // Game state
@@ -307,6 +378,7 @@
             document.getElementById('joy-sound').src = ASSETS.joy;
             document.getElementById('applause-sound').src = ASSETS.applause;
             document.getElementById('dancing-gif').src = ASSETS.dancing;
+            document.getElementById('jingle-sound').src = ASSETS.jingle;
         }
 
         // Play sound
@@ -474,12 +546,21 @@
 
             // Start timer
             timerInterval = setInterval(updateTimer, 1000);
+
+            // Play background jingle
+            const jingle = document.getElementById('jingle-sound');
+            jingle.currentTime = 0;
+            jingle.play().catch(e => console.log('Jingle play failed:', e));
         }
 
         // End game
         function endGame() {
             gameActive = false;
             clearInterval(timerInterval);
+
+            // Stop the jingle
+            const jingle = document.getElementById('jingle-sound');
+            jingle.pause();
 
             showResults();
 
