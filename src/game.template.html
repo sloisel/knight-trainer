@@ -321,15 +321,34 @@
             color: #ffd700;
         }
 
-        .highscore-entry {
-            display: flex;
-            justify-content: space-between;
+        .highscore-list-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .highscore-list-table td {
             padding: 5px 10px;
             border-bottom: 1px solid rgba(255,255,255,0.2);
         }
 
-        .highscore-entry:last-child {
+        .highscore-list-table tr:last-child td {
             border-bottom: none;
+        }
+
+        .highscore-list-table td:nth-child(1) {
+            text-align: left;
+            width: 30px;
+        }
+
+        .highscore-list-table td:nth-child(2) {
+            text-align: right;
+            width: 70px;
+        }
+
+        .highscore-list-table td:nth-child(3) {
+            text-align: right;
+            font-size: 0.8em;
+            color: #888;
         }
 
         .instructions {
@@ -398,6 +417,7 @@
         <div class="highscores">
             <h2>High Scores</h2>
             <div id="highscore-list"></div>
+            <button onclick="clearScores()" style="margin-top: 10px; padding: 5px 15px; font-size: 0.9em; background: #666; border: none; border-radius: 5px; color: white; cursor: pointer;">Clear Scores</button>
         </div>
         <button class="btn" onclick="startGame()">Play Again</button>
     </div>
@@ -799,7 +819,9 @@
 
         function saveHighScore(newScore) {
             const scores = getHighScores();
-            scores.push({ score: newScore });
+            const now = new Date();
+            const dateStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            scores.push({ score: newScore, date: dateStr });
             scores.sort((a, b) => b.score - a.score);
             const top5 = scores.slice(0, 5);
             localStorage.setItem('knightTrainerScores', JSON.stringify(top5));
@@ -814,12 +836,18 @@
                 return;
             }
 
-            list.innerHTML = scores.map((entry, i) => `
-                <div class="highscore-entry">
-                    <span>#${i + 1}</span>
-                    <span>${entry.score} pts</span>
-                </div>
-            `).join('');
+            list.innerHTML = `<table class="highscore-list-table">` + scores.map((entry, i) => `
+                <tr>
+                    <td>#${i + 1}</td>
+                    <td>${entry.score} pts</td>
+                    <td>${entry.date || ''}</td>
+                </tr>
+            `).join('') + `</table>`;
+        }
+
+        function clearScores() {
+            localStorage.removeItem('knightTrainerScores');
+            displayHighScores();
         }
 
         // Initialize on load
