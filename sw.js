@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chess-trainers-v2';
+const CACHE_NAME = 'chess-trainers-v3';
 const urlsToCache = [
   '/knight-trainer/',
   '/knight-trainer/index.html',
@@ -34,6 +34,27 @@ self.addEventListener('activate', event => {
 
 // Fetch - serve from cache, fallback to network
 self.addEventListener('fetch', event => {
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') return;
+
+  // Use network-first for stockfish.js (loaded as Worker)
+  if (event.request.url.includes('stockfish.js')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then(cache => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then(response => {
@@ -49,6 +70,9 @@ self.addEventListener('fetch', event => {
             });
           }
           return response;
+        }).catch(() => {
+          // Return offline fallback if available
+          return new Response('Offline', { status: 503 });
         });
       })
   );
