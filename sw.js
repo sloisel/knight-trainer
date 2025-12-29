@@ -1,8 +1,11 @@
-const CACHE_NAME = 'knight-trainer-v1';
+const CACHE_NAME = 'chess-trainers-v2';
 const urlsToCache = [
   '/knight-trainer/',
   '/knight-trainer/index.html',
-  '/knight-trainer/manifest.json'
+  '/knight-trainer/forks.html',
+  '/knight-trainer/stockfish.js',
+  '/knight-trainer/manifest.json',
+  '/knight-trainer/manifest-forks.json'
 ];
 
 // Install - cache files

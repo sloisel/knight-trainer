@@ -11,11 +11,12 @@
     <meta name="apple-mobile-web-app-title" content="Fork Trainer">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#1a1a2e">
-    <link rel="apple-touch-icon" sizes="152x152" href="assets/icon-152.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
-    <link rel="apple-touch-icon-precomposed" sizes="152x152" href="assets/icon-152.png">
-    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="assets/icon-180.png">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{{ICON_BASE64}}">
+    <link rel="manifest" href="manifest-forks.json">
+    <link rel="apple-touch-icon" sizes="152x152" href="assets/fork-icon-152.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/fork-icon-180.png">
+    <link rel="apple-touch-icon-precomposed" sizes="152x152" href="assets/fork-icon-152.png">
+    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="assets/fork-icon-180.png">
+    <link rel="icon" type="image/svg+xml" href="assets/fork-icon.svg">
     <style>
         @font-face {
             font-family: 'Noto Sans Symbols 2';
@@ -516,7 +517,7 @@
             </div>
         </div>
         <div class="fen-display" id="fen-display" onclick="copyFEN()"></div>
-        <button class="btn" onclick="document.getElementById('end-screen').classList.remove('active'); document.getElementById('splash-screen').classList.add('active');">Play Again</button>
+        <button class="btn" onclick="goToSplash()">Play Again</button>
     </div>
 
     <!-- Loading Screen -->
@@ -587,7 +588,7 @@
                 if (empty > 0) row += empty;
                 rows.push(row);
             }
-            return rows.join('/');
+            return rows.join('/') + ' w - - 0 1';
         }
 
         // Board representation: board[row][col], row 0 = rank 8, row 7 = rank 1
@@ -601,879 +602,861 @@
         let draggingPiece = null;
         let dragElement = null;
 
-        // Web Worker for background puzzle generation
-        let puzzleWorker = null;
-        let puzzleQueue = [];  // Queue of pre-generated puzzles (up to 3)
-        let waitingForPuzzle = false;  // True if we're waiting on worker to finish
+        // Puzzle generation and validation
+        // puzzleWorker removed - generation now in main thread
+        let stockfishWorker = null;   // Validates with deep search
+        let puzzleQueue = [];         // Queue of validated puzzles
+        let pendingCandidate = null;  // Candidate awaiting Stockfish validation
+        let waitingForPuzzle = false;
+        let stockfishReady = false;
+        let stockfishLines = [];      // Accumulate multipv output
         const PUZZLE_QUEUE_SIZE = 3;
-
-        // Chess engine and puzzle generator code is in the Web Worker only
-        // Main thread only needs constants, helpers, and boardToFEN (defined above)
-
-        // ============ WEB WORKER FOR BACKGROUND PUZZLE GENERATION ============
-
-        function createPuzzleWorker() {
-            // Worker code as a string - includes all engine and generator code
-            const workerCode = `
-                // Piece constants
-                const EMPTY = 0;
-                const W_PAWN = 1, W_KNIGHT = 2, W_BISHOP = 3, W_ROOK = 4, W_QUEEN = 5, W_KING = 6;
-                const B_PAWN = 7, B_KNIGHT = 8, B_BISHOP = 9, B_ROOK = 10, B_QUEEN = 11, B_KING = 12;
-
-                const PIECE_VALUES = {
-                    [W_PAWN]: 1, [W_KNIGHT]: 3, [W_BISHOP]: 3, [W_ROOK]: 5, [W_QUEEN]: 10, [W_KING]: 1000,
-                    [B_PAWN]: 1, [B_KNIGHT]: 3, [B_BISHOP]: 3, [B_ROOK]: 5, [B_QUEEN]: 10, [B_KING]: 1000
-                };
-
-                function isWhite(piece) { return piece >= W_PAWN && piece <= W_KING; }
-                function isBlack(piece) { return piece >= B_PAWN && piece <= B_KING; }
-
-                function copyBoard(b) {
-                    return b.map(row => [...row]);
-                }
-
-                function generateMoves(board, isWhiteToMove) {
-                    const moves = [];
-                    const friendly = isWhiteToMove ? isWhite : isBlack;
-                    const enemy = isWhiteToMove ? isBlack : isWhite;
-
-                    for (let r = 0; r < 8; r++) {
-                        for (let c = 0; c < 8; c++) {
-                            const piece = board[r][c];
-                            if (!friendly(piece)) continue;
-
-                            const addMove = (toR, toC) => {
-                                if (toR >= 0 && toR < 8 && toC >= 0 && toC < 8) {
-                                    const target = board[toR][toC];
-                                    if (!friendly(target)) {
-                                        moves.push({ fromR: r, fromC: c, toR, toC, captured: target });
-                                    }
-                                }
-                            };
-
-                            const addSlide = (dr, dc) => {
-                                for (let i = 1; i < 8; i++) {
-                                    const toR = r + dr * i, toC = c + dc * i;
-                                    if (toR < 0 || toR >= 8 || toC < 0 || toC >= 8) break;
-                                    const target = board[toR][toC];
-                                    if (friendly(target)) break;
-                                    moves.push({ fromR: r, fromC: c, toR, toC, captured: target });
-                                    if (enemy(target)) break;
-                                }
-                            };
-
-                            if (piece === W_PAWN) {
-                                if (r > 0 && board[r-1][c] === EMPTY) {
-                                    addMove(r-1, c);
-                                    if (r === 6 && board[r-2][c] === EMPTY) addMove(r-2, c);
-                                }
-                                if (r > 0 && c > 0 && enemy(board[r-1][c-1])) addMove(r-1, c-1);
-                                if (r > 0 && c < 7 && enemy(board[r-1][c+1])) addMove(r-1, c+1);
-                            } else if (piece === B_PAWN) {
-                                if (r < 7 && board[r+1][c] === EMPTY) {
-                                    addMove(r+1, c);
-                                    if (r === 1 && board[r+2][c] === EMPTY) addMove(r+2, c);
-                                }
-                                if (r < 7 && c > 0 && enemy(board[r+1][c-1])) addMove(r+1, c-1);
-                                if (r < 7 && c < 7 && enemy(board[r+1][c+1])) addMove(r+1, c+1);
-                            } else if (piece === W_KNIGHT || piece === B_KNIGHT) {
-                                const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
-                                for (const [dr, dc] of knightMoves) addMove(r+dr, c+dc);
-                            } else if (piece === W_BISHOP || piece === B_BISHOP) {
-                                addSlide(-1,-1); addSlide(-1,1); addSlide(1,-1); addSlide(1,1);
-                            } else if (piece === W_ROOK || piece === B_ROOK) {
-                                addSlide(-1,0); addSlide(1,0); addSlide(0,-1); addSlide(0,1);
-                            } else if (piece === W_QUEEN || piece === B_QUEEN) {
-                                addSlide(-1,-1); addSlide(-1,1); addSlide(1,-1); addSlide(1,1);
-                                addSlide(-1,0); addSlide(1,0); addSlide(0,-1); addSlide(0,1);
-                            } else if (piece === W_KING || piece === B_KING) {
-                                for (let dr = -1; dr <= 1; dr++) {
-                                    for (let dc = -1; dc <= 1; dc++) {
-                                        if (dr !== 0 || dc !== 0) addMove(r+dr, c+dc);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return moves;
-                }
-
-                function makeMove(board, move) {
-                    const newBoard = copyBoard(board);
-                    newBoard[move.toR][move.toC] = newBoard[move.fromR][move.fromC];
-                    newBoard[move.fromR][move.fromC] = EMPTY;
-                    return newBoard;
-                }
-
-                function findKing(board, white) {
-                    const king = white ? W_KING : B_KING;
-                    for (let r = 0; r < 8; r++) {
-                        for (let c = 0; c < 8; c++) {
-                            if (board[r][c] === king) return { r, c };
-                        }
-                    }
-                    return null;
-                }
-
-                function isSquareAttacked(board, r, c, byWhite) {
-                    const attacker = byWhite ? isWhite : isBlack;
-
-                    const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
-                    for (const [dr, dc] of knightMoves) {
-                        const nr = r + dr, nc = c + dc;
-                        if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
-                            const p = board[nr][nc];
-                            if ((byWhite && p === W_KNIGHT) || (!byWhite && p === B_KNIGHT)) return true;
-                        }
-                    }
-
-                    if (byWhite) {
-                        if (r < 7 && c > 0 && board[r+1][c-1] === W_PAWN) return true;
-                        if (r < 7 && c < 7 && board[r+1][c+1] === W_PAWN) return true;
-                    } else {
-                        if (r > 0 && c > 0 && board[r-1][c-1] === B_PAWN) return true;
-                        if (r > 0 && c < 7 && board[r-1][c+1] === B_PAWN) return true;
-                    }
-
-                    for (let dr = -1; dr <= 1; dr++) {
-                        for (let dc = -1; dc <= 1; dc++) {
-                            if (dr === 0 && dc === 0) continue;
-                            const nr = r + dr, nc = c + dc;
-                            if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
-                                const p = board[nr][nc];
-                                if ((byWhite && p === W_KING) || (!byWhite && p === B_KING)) return true;
-                            }
-                        }
-                    }
-
-                    const checkSlide = (dr, dc, pieces) => {
-                        for (let i = 1; i < 8; i++) {
-                            const nr = r + dr * i, nc = c + dc * i;
-                            if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) break;
-                            const p = board[nr][nc];
-                            if (p !== EMPTY) {
-                                if (attacker(p) && pieces.includes(p)) return true;
-                                break;
-                            }
-                        }
-                        return false;
-                    };
-
-                    const diagPieces = byWhite ? [W_BISHOP, W_QUEEN] : [B_BISHOP, B_QUEEN];
-                    if (checkSlide(-1,-1, diagPieces) || checkSlide(-1,1, diagPieces) ||
-                        checkSlide(1,-1, diagPieces) || checkSlide(1,1, diagPieces)) return true;
-
-                    const straightPieces = byWhite ? [W_ROOK, W_QUEEN] : [B_ROOK, B_QUEEN];
-                    if (checkSlide(-1,0, straightPieces) || checkSlide(1,0, straightPieces) ||
-                        checkSlide(0,-1, straightPieces) || checkSlide(0,1, straightPieces)) return true;
-
-                    return false;
-                }
-
-                function isInCheck(board, whiteKing) {
-                    const king = findKing(board, whiteKing);
-                    if (!king) return true;
-                    return isSquareAttacked(board, king.r, king.c, !whiteKing);
-                }
-
-                function evaluate(board) {
-                    let score = 0;
-                    for (let r = 0; r < 8; r++) {
-                        for (let c = 0; c < 8; c++) {
-                            const p = board[r][c];
-                            if (p === EMPTY) continue;
-                            const val = PIECE_VALUES[p] || 0;
-                            score += isWhite(p) ? val : -val;
-                        }
-                    }
-                    return score;
-                }
-
-                const DELTA_MARGIN = 2;
-                function quiesce(board, alpha, beta, isWhiteToMove, nodes) {
-                    nodes.count++;
-                    const standPat = evaluate(board);
-
-                    if (isWhiteToMove) {
-                        if (standPat >= beta) return beta;
-                        if (standPat + DELTA_MARGIN < alpha) return alpha;
-                        if (standPat > alpha) alpha = standPat;
-
-                        const moves = generateMoves(board, true);
-                        for (const move of moves) {
-                            if (move.captured === EMPTY) continue;
-                            const newBoard = makeMove(board, move);
-                            if (isInCheck(newBoard, true)) continue;
-                            const score = quiesce(newBoard, alpha, beta, false, nodes);
-                            if (score > alpha) alpha = score;
-                            if (alpha >= beta) return beta;
-                        }
-                        return alpha;
-                    } else {
-                        if (standPat <= alpha) return alpha;
-                        if (standPat - DELTA_MARGIN > beta) return beta;
-                        if (standPat < beta) beta = standPat;
-
-                        const moves = generateMoves(board, false);
-                        for (const move of moves) {
-                            if (move.captured === EMPTY) continue;
-                            const newBoard = makeMove(board, move);
-                            if (isInCheck(newBoard, false)) continue;
-                            const score = quiesce(newBoard, alpha, beta, true, nodes);
-                            if (score < beta) beta = score;
-                            if (alpha >= beta) return alpha;
-                        }
-                        return beta;
-                    }
-                }
-
-                function alphaBeta(board, depth, alpha, beta, isWhiteToMove, nodes) {
-                    nodes.count++;
-
-                    if (depth === 0) {
-                        return { score: quiesce(board, alpha, beta, isWhiteToMove, nodes), move: null };
-                    }
-
-                    const moves = generateMoves(board, isWhiteToMove);
-                    moves.sort((a, b) => (PIECE_VALUES[b.captured] || 0) - (PIECE_VALUES[a.captured] || 0));
-
-                    let bestMove = null;
-
-                    if (isWhiteToMove) {
-                        let maxEval = -Infinity;
-                        for (const move of moves) {
-                            const newBoard = makeMove(board, move);
-                            if (isInCheck(newBoard, true)) continue;
-
-                            const result = alphaBeta(newBoard, depth - 1, alpha, beta, false, nodes);
-                            if (result.score > maxEval) {
-                                maxEval = result.score;
-                                bestMove = move;
-                            }
-                            alpha = Math.max(alpha, result.score);
-                            if (beta <= alpha) break;
-                        }
-                        return { score: maxEval === -Infinity ? -10000 : maxEval, move: bestMove };
-                    } else {
-                        let minEval = Infinity;
-                        for (const move of moves) {
-                            const newBoard = makeMove(board, move);
-                            if (isInCheck(newBoard, false)) continue;
-
-                            const result = alphaBeta(newBoard, depth - 1, alpha, beta, true, nodes);
-                            if (result.score < minEval) {
-                                minEval = result.score;
-                                bestMove = move;
-                            }
-                            beta = Math.min(beta, result.score);
-                            if (beta <= alpha) break;
-                        }
-                        return { score: minEval === Infinity ? 10000 : minEval, move: bestMove };
-                    }
-                }
-
-                function findBestMoves(board, depth, isWhiteToMove) {
-                    const moves = generateMoves(board, isWhiteToMove);
-                    const evaluatedMoves = [];
-                    const nodes = { count: 0 };
-
-                    for (const move of moves) {
-                        const newBoard = makeMove(board, move);
-                        if (isInCheck(newBoard, isWhiteToMove)) continue;
-
-                        const result = alphaBeta(newBoard, depth - 1, -Infinity, Infinity, !isWhiteToMove, nodes);
-                        evaluatedMoves.push({ move, score: result.score });
-                    }
-
-                    evaluatedMoves.sort((a, b) => b.score - a.score);
-                    return evaluatedMoves;
-                }
-
-                function getAttackedSquares(board, piece, r, c) {
-                    const attacks = [];
-
-                    if (piece === W_KNIGHT || piece === B_KNIGHT) {
-                        const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
-                        for (const [dr, dc] of knightMoves) {
-                            const nr = r + dr, nc = c + dc;
-                            if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
-                                attacks.push({ r: nr, c: nc });
-                            }
-                        }
-                    } else if (piece === W_BISHOP || piece === B_BISHOP) {
-                        const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
-                        for (const [dr, dc] of dirs) {
-                            for (let i = 1; i < 8; i++) {
-                                const nr = r + dr * i, nc = c + dc * i;
-                                if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) break;
-                                attacks.push({ r: nr, c: nc });
-                                if (board[nr][nc] !== EMPTY) break;
-                            }
-                        }
-                    } else if (piece === W_PAWN) {
-                        if (r > 0 && c > 0) attacks.push({ r: r-1, c: c-1 });
-                        if (r > 0 && c < 7) attacks.push({ r: r-1, c: c+1 });
-                    }
-
-                    return attacks;
-                }
-
-                function canPieceCapture(piece, fromR, fromC, targetR, targetC, board) {
-                    if (piece === W_KNIGHT || piece === B_KNIGHT) {
-                        const dr = Math.abs(targetR - fromR), dc = Math.abs(targetC - fromC);
-                        return (dr === 2 && dc === 1) || (dr === 1 && dc === 2);
-                    } else if (piece === W_BISHOP || piece === B_BISHOP) {
-                        const dr = targetR - fromR, dc = targetC - fromC;
-                        if (Math.abs(dr) !== Math.abs(dc) || dr === 0) return false;
-                        const stepR = dr > 0 ? 1 : -1, stepC = dc > 0 ? 1 : -1;
-                        for (let i = 1; i < Math.abs(dr); i++) {
-                            if (board[fromR + stepR * i][fromC + stepC * i] !== EMPTY) return false;
-                        }
-                        return true;
-                    } else if (piece === W_PAWN) {
-                        return targetR === fromR - 1 && Math.abs(targetC - fromC) === 1;
-                    }
-                    return false;
-                }
-
-                function generateForkPuzzle() {
-                    const MAX_ATTEMPTS = 1000;
-                    const forkerTypes = [W_KNIGHT, W_BISHOP, W_PAWN];
-                    const forkerType = forkerTypes[Math.floor(Math.random() * forkerTypes.length)];
-                    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-                        const puzzle = tryGeneratePuzzle(forkerType);
-                        if (puzzle) return puzzle;
-                    }
-                    return null;
-                }
-
-                function tryGeneratePuzzle(forkerType) {
-                    const board = Array(8).fill(null).map(() => Array(8).fill(EMPTY));
-
-                    let targetPieceTypes;
-                    if (forkerType === W_BISHOP) {
-                        targetPieceTypes = [B_ROOK, B_ROOK, B_KNIGHT, B_KNIGHT];
-                    } else {
-                        targetPieceTypes = [B_QUEEN, B_ROOK, B_ROOK, B_KNIGHT, B_BISHOP];
-                    }
-                    const target1Type = targetPieceTypes[Math.floor(Math.random() * targetPieceTypes.length)];
-                    let target2Type = targetPieceTypes[Math.floor(Math.random() * targetPieceTypes.length)];
-                    if (target1Type === B_QUEEN && target2Type === B_QUEEN) {
-                        const nonQueenTypes = targetPieceTypes.filter(t => t !== B_QUEEN);
-                        target2Type = nonQueenTypes[Math.floor(Math.random() * nonQueenTypes.length)];
-                    }
-
-                    let forkRows, forkCols;
-                    if (forkerType === W_BISHOP) {
-                        forkRows = [2];
-                        forkCols = [1, 2, 3, 4, 5, 6];
-                    } else if (forkerType === W_PAWN) {
-                        forkRows = [3, 4, 5];
-                        forkCols = [1, 2, 3, 4, 5, 6];
-                    } else {
-                        forkRows = [3, 4, 5];
-                        forkCols = [0, 1, 2, 3, 4, 5, 6, 7];
-                    }
-                    const forkRow = forkRows[Math.floor(Math.random() * forkRows.length)];
-                    const forkCol = forkCols[Math.floor(Math.random() * forkCols.length)];
-
-                    board[forkRow][forkCol] = forkerType;
-                    const attacks = getAttackedSquares(board, forkerType, forkRow, forkCol);
-                    board[forkRow][forkCol] = EMPTY;
-
-                    if (attacks.length < 2) return null;
-
-                    const isValidTargetPos = (pos, pieceType, isBishopFork = false) => {
-                        if (isBishopFork) {
-                            if (pos.r < 1 || pos.r > 3) return false;
-                        } else {
-                            if (pos.r > 4) return false;
-                        }
-                        if ((pieceType === B_BISHOP) && (pos.r === 0 || pos.r === 7)) return false;
-                        return true;
-                    };
-
-                    const shuffled = attacks.sort(() => Math.random() - 0.5);
-                    let target1Pos = null, target2Pos = null;
-
-                    const getDiagonalDir = (pos) => {
-                        const dr = pos.r - forkRow;
-                        const dc = pos.c - forkCol;
-                        if ((dr > 0 && dc > 0) || (dr < 0 && dc < 0)) return 'nw-se';
-                        return 'ne-sw';
-                    };
-
-                    const isOppositeDiagonal = (pos1, pos2) => {
-                        const dr1 = pos1.r - forkRow, dc1 = pos1.c - forkCol;
-                        const dr2 = pos2.r - forkRow, dc2 = pos2.c - forkCol;
-                        return getDiagonalDir(pos1) === getDiagonalDir(pos2) &&
-                               Math.sign(dr1) !== Math.sign(dr2);
-                    };
-
-                    const isBishopFork = (forkerType === W_BISHOP);
-                    for (const pos of shuffled) {
-                        if (!target1Pos && isValidTargetPos(pos, target1Type, isBishopFork)) {
-                            target1Pos = pos;
-                        } else if (target1Pos && !target2Pos && (pos.r !== target1Pos.r || pos.c !== target1Pos.c)) {
-                            if (isValidTargetPos(pos, target2Type, isBishopFork)) {
-                                if (target1Type === B_BISHOP && target2Type === B_BISHOP) {
-                                    if ((pos.r + pos.c) % 2 !== (target1Pos.r + target1Pos.c) % 2) {
-                                        target2Pos = pos;
-                                        break;
-                                    }
-                                } else if (forkerType === W_BISHOP) {
-                                    if (isOppositeDiagonal(target1Pos, pos)) {
-                                        target2Pos = pos;
-                                        break;
-                                    }
-                                } else {
-                                    target2Pos = pos;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!target1Pos || !target2Pos) return null;
-
-                    board[target1Pos.r][target1Pos.c] = target1Type;
-                    board[target2Pos.r][target2Pos.c] = target2Type;
-
-                    if (isSquareAttacked(board, forkRow, forkCol, false)) {
-                        return null;
-                    }
-
-                    let preforkPos = null;
-
-                    if (forkerType === W_PAWN) {
-                        // For forks on rank 4 (row 4) in columns b,c,f,g, allow double-move
-                        let preforkRow = forkRow + 1;
-                        const canDoubleMove = forkRow === 4 && [1, 2, 5, 6].includes(forkCol);
-                        if (canDoubleMove && Math.random() < 0.5) {
-                            // Try double-move (prefork on rank 2, row 6)
-                            if (board[6][forkCol] === EMPTY && board[5][forkCol] === EMPTY) {
-                                preforkRow = 6;
-                            }
-                        }
-                        if (preforkRow < 8 && board[preforkRow][forkCol] === EMPTY) {
-                            if (!canPieceCapture(W_PAWN, preforkRow, forkCol, target1Pos.r, target1Pos.c, board) &&
-                                !canPieceCapture(W_PAWN, preforkRow, forkCol, target2Pos.r, target2Pos.c, board)) {
-                                preforkPos = { r: preforkRow, c: forkCol };
-                            }
-                        }
-                    } else if (forkerType === W_KNIGHT) {
-                        const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
-                        const candidates = [];
-                        for (const [dr, dc] of knightMoves) {
-                            const pr = forkRow + dr, pc = forkCol + dc;
-                            if (pr >= 0 && pr < 8 && pc >= 0 && pc < 8 && board[pr][pc] === EMPTY) {
-                                if (!canPieceCapture(W_KNIGHT, pr, pc, target1Pos.r, target1Pos.c, board) &&
-                                    !canPieceCapture(W_KNIGHT, pr, pc, target2Pos.r, target2Pos.c, board)) {
-                                    candidates.push({ r: pr, c: pc, priority: pr });
-                                }
-                            }
-                        }
-                        if (candidates.length > 0) {
-                            candidates.sort((a, b) => b.priority - a.priority);
-                            preforkPos = candidates[0];
-                        }
-                    } else if (forkerType === W_BISHOP) {
-                        const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
-                        const candidates = [];
-                        for (const [dr, dc] of dirs) {
-                            for (let i = 1; i < 8; i++) {
-                                const pr = forkRow + dr * i, pc = forkCol + dc * i;
-                                if (pr < 0 || pr >= 8 || pc < 0 || pc >= 8) break;
-                                if (board[pr][pc] !== EMPTY) break;
-
-                                const testBoard = copyBoard(board);
-                                if (!canPieceCapture(W_BISHOP, pr, pc, target1Pos.r, target1Pos.c, testBoard) &&
-                                    !canPieceCapture(W_BISHOP, pr, pc, target2Pos.r, target2Pos.c, testBoard)) {
-                                    candidates.push({ r: pr, c: pc, priority: pr });
-                                }
-                            }
-                        }
-                        if (candidates.length > 0) {
-                            candidates.sort((a, b) => b.priority - a.priority);
-                            preforkPos = candidates[0];
-                        }
-                    }
-
-                    if (!preforkPos) return null;
-
-                    board[preforkPos.r][preforkPos.c] = forkerType;
-
-                    const whiteKingside = Math.random() < 0.5;
-                    const blackKingside = Math.random() < 0.5;
-
-                    const wKingPos = whiteKingside ? { r: 7, c: 6 } : { r: 7, c: 2 };
-                    const bKingPos = blackKingside ? { r: 0, c: 6 } : { r: 0, c: 2 };
-
-                    if (board[wKingPos.r][wKingPos.c] !== EMPTY || board[bKingPos.r][bKingPos.c] !== EMPTY) {
-                        return null;
-                    }
-
-                    board[wKingPos.r][wKingPos.c] = W_KING;
-                    board[bKingPos.r][bKingPos.c] = B_KING;
-
-                    const wCastledRookPos = whiteKingside ? { r: 7, c: 5 } : { r: 7, c: 3 };
-                    const wOtherRookPos = whiteKingside ? { r: 7, c: 0 } : { r: 7, c: 7 };
-                    const bCastledRookPos = blackKingside ? { r: 0, c: 5 } : { r: 0, c: 3 };
-                    const bOtherRookPos = blackKingside ? { r: 0, c: 0 } : { r: 0, c: 7 };
-
-                    if (board[wCastledRookPos.r][wCastledRookPos.c] === EMPTY) board[wCastledRookPos.r][wCastledRookPos.c] = W_ROOK;
-                    if (board[wOtherRookPos.r][wOtherRookPos.c] === EMPTY) board[wOtherRookPos.r][wOtherRookPos.c] = W_ROOK;
-                    const targetRookCount = (target1Type === B_ROOK ? 1 : 0) + (target2Type === B_ROOK ? 1 : 0);
-                    if (targetRookCount < 2 && board[bCastledRookPos.r][bCastledRookPos.c] === EMPTY) {
-                        board[bCastledRookPos.r][bCastledRookPos.c] = B_ROOK;
-                    }
-
-                    const wCastlePawnCols = whiteKingside ? [5, 6, 7] : [0, 1, 2];
-                    const bCastlePawnCols = blackKingside ? [5, 6, 7] : [0, 1, 2];
-
-                    const columnHasPawn = (c, pawnType) => {
-                        for (let r = 0; r < 8; r++) {
-                            if (board[r][c] === pawnType) return true;
-                        }
-                        return false;
-                    };
-
-                    const attacksForkSquare = (piece, r, c) => {
-                        const dr = forkRow - r, dc = forkCol - c;
-                        const absDr = Math.abs(dr), absDc = Math.abs(dc);
-
-                        if (piece === B_PAWN) {
-                            return dr === 1 && absDc === 1;
-                        }
-                        if (piece === B_KNIGHT) {
-                            return (absDr === 2 && absDc === 1) || (absDr === 1 && absDc === 2);
-                        }
-                        if (piece === B_BISHOP) {
-                            return absDr === absDc && absDr > 0;
-                        }
-                        if (piece === B_ROOK) {
-                            return (dr === 0 || dc === 0) && (absDr + absDc > 0);
-                        }
-                        if (piece === B_QUEEN) {
-                            return (absDr === absDc && absDr > 0) || ((dr === 0 || dc === 0) && (absDr + absDc > 0));
-                        }
-                        return false;
-                    };
-
-                    for (const c of wCastlePawnCols) {
-                        if (columnHasPawn(c, W_PAWN)) continue;
-                        for (let r = 6; r >= 4; r--) {
-                            if (board[r][c] === EMPTY) {
-                                board[r][c] = W_PAWN;
-                                break;
-                            }
-                        }
-                    }
-                    for (const c of bCastlePawnCols) {
-                        if (columnHasPawn(c, B_PAWN)) continue;
-                        const wouldAttackFork = forkRow === 2 && Math.abs(forkCol - c) === 1;
-                        if (wouldAttackFork && board[2][c] === EMPTY) {
-                            board[2][c] = B_PAWN;
-                        } else {
-                            for (let r = 1; r <= 3; r++) {
-                                if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c)) {
-                                    board[r][c] = B_PAWN;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    for (const c of [3, 4]) {
-                        if (!columnHasPawn(c, W_PAWN)) {
-                            for (let r = 4; r <= 6; r++) {
-                                if (board[r][c] === EMPTY) {
-                                    board[r][c] = W_PAWN;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!columnHasPawn(c, B_PAWN)) {
-                            for (let r = 2; r <= 3; r++) {
-                                if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c)) {
-                                    board[r][c] = B_PAWN;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    for (let c = 0; c < 8; c++) {
-                        if (!columnHasPawn(c, W_PAWN) && !wCastlePawnCols.includes(c) && c !== 3 && c !== 4) {
-                            for (let r = 6; r >= 4; r--) {
-                                if (board[r][c] === EMPTY) {
-                                    board[r][c] = W_PAWN;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!columnHasPawn(c, B_PAWN) && !bCastlePawnCols.includes(c) && c !== 3 && c !== 4) {
-                            for (let r = 1; r <= 3; r++) {
-                                if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c)) {
-                                    board[r][c] = B_PAWN;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    const addPiece = (piece, rows) => {
-                        for (let attempt = 0; attempt < 50; attempt++) {
-                            const r = rows[Math.floor(Math.random() * rows.length)];
-                            const c = Math.floor(Math.random() * 8);
-                            if (board[r][c] === EMPTY) {
-                                if (piece >= B_PAWN && attacksForkSquare(piece, r, c)) continue;
-                                board[r][c] = piece;
-                                return { r, c };
-                            }
-                        }
-                        return null;
-                    };
-
-                    const addBishopPair = (piece, rows) => {
-                        const validRows = rows.filter(r => r !== 0 && r !== 7);
-                        if (validRows.length === 0) return false;
-
-                        let placedColors = new Set();
-
-                        for (let r = 0; r < 8; r++) {
-                            for (let c = 0; c < 8; c++) {
-                                if (board[r][c] === piece) {
-                                    placedColors.add((r + c) % 2);
-                                }
-                            }
-                        }
-
-                        for (let needed = 2 - placedColors.size; needed > 0; needed--) {
-                            let placed = false;
-                            for (let attempt = 0; attempt < 50 && !placed; attempt++) {
-                                const r = validRows[Math.floor(Math.random() * validRows.length)];
-                                const c = Math.floor(Math.random() * 8);
-                                const sqColor = (r + c) % 2;
-                                if (board[r][c] === EMPTY && !placedColors.has(sqColor)) {
-                                    if (piece === B_BISHOP && attacksForkSquare(piece, r, c)) continue;
-                                    board[r][c] = piece;
-                                    placedColors.add(sqColor);
-                                    placed = true;
-                                }
-                            }
-                        }
-                        return true;
-                    };
-
-                    const countPieces = (type) => {
-                        let count = 0;
-                        for (let r = 0; r < 8; r++) {
-                            for (let c = 0; c < 8; c++) {
-                                if (board[r][c] === type) count++;
-                            }
-                        }
-                        return count;
-                    };
-
-                    addPiece(W_KNIGHT, [5, 6]);
-                    if (forkerType !== W_KNIGHT) addPiece(W_KNIGHT, [5, 6]);
-
-                    if (board[7][3] === EMPTY) {
-                        board[7][3] = W_QUEEN;
-                    } else {
-                        let placed = false;
-                        for (let attempt = 0; attempt < 50 && !placed; attempt++) {
-                            const c = Math.floor(Math.random() * 8);
-                            if (!wCastlePawnCols.includes(c) && board[7][c] === EMPTY) {
-                                board[7][c] = W_QUEEN;
-                                placed = true;
-                            }
-                        }
-                    }
-
-                    if (forkerType === W_BISHOP) {
-                        const forkingBishopColor = (preforkPos.r + preforkPos.c) % 2;
-                        const otherColor = 1 - forkingBishopColor;
-                        let placed = false;
-                        for (let attempt = 0; attempt < 50 && !placed; attempt++) {
-                            const r = 5 + Math.floor(Math.random() * 3);
-                            const c = Math.floor(Math.random() * 8);
-                            if (board[r][c] === EMPTY && (r + c) % 2 === otherColor) {
-                                board[r][c] = W_BISHOP;
-                                placed = true;
-                            }
-                        }
-                    } else {
-                        addBishopPair(W_BISHOP, [5, 6, 7]);
-                    }
-
-                    const knightsNeeded = 2 - countPieces(B_KNIGHT);
-                    for (let i = 0; i < knightsNeeded; i++) addPiece(B_KNIGHT, [1, 2]);
-
-                    addBishopPair(B_BISHOP, [1, 2]);
-
-                    if (countPieces(B_QUEEN) === 0) {
-                        if (board[0][3] === EMPTY) {
-                            board[0][3] = B_QUEEN;
-                        } else {
-                            let placed = false;
-                            for (let attempt = 0; attempt < 50 && !placed; attempt++) {
-                                const c = Math.floor(Math.random() * 8);
-                                if (!bCastlePawnCols.includes(c) && board[0][c] === EMPTY && !attacksForkSquare(B_QUEEN, 0, c)) {
-                                    board[0][c] = B_QUEEN;
-                                    placed = true;
-                                }
-                            }
-                        }
-                    }
-
-                    const bRooksNeeded = 2 - countPieces(B_ROOK);
-                    if (bRooksNeeded > 0 && board[bOtherRookPos.r][bOtherRookPos.c] === EMPTY) {
-                        board[bOtherRookPos.r][bOtherRookPos.c] = B_ROOK;
-                    }
-
-                    // Validate exact piece counts
-                    const expectedCounts = {
-                        [W_PAWN]: 8, [W_ROOK]: 2, [W_BISHOP]: 2, [W_KNIGHT]: 2, [W_QUEEN]: 1, [W_KING]: 1,
-                        [B_PAWN]: 8, [B_ROOK]: 2, [B_BISHOP]: 2, [B_KNIGHT]: 2, [B_QUEEN]: 1, [B_KING]: 1
-                    };
-                    for (const [pieceType, expected] of Object.entries(expectedCounts)) {
-                        if (countPieces(parseInt(pieceType)) !== expected) {
-                            return null;
-                        }
-                    }
-
-                    if (isInCheck(board, true) || isInCheck(board, false)) {
-                        return null;
-                    }
-
-                    const boardAfterFork = copyBoard(board);
-                    boardAfterFork[forkRow][forkCol] = boardAfterFork[preforkPos.r][preforkPos.c];
-                    boardAfterFork[preforkPos.r][preforkPos.c] = EMPTY;
-
-                    const hasLegalMove = (b, r, c) => {
-                        const piece = b[r][c];
-                        if (piece === EMPTY) return false;
-                        const isWhitePiece = isWhite(piece);
-                        const allMoves = generateMoves(b, isWhitePiece);
-                        for (const move of allMoves) {
-                            if (move.fromR === r && move.fromC === c) {
-                                const newBoard = makeMove(b, move);
-                                if (!isInCheck(newBoard, isWhitePiece)) {
-                                    return true;
-                                }
-                            }
-                        }
-                        return false;
-                    };
-
-                    if (!hasLegalMove(boardAfterFork, target1Pos.r, target1Pos.c)) {
-                        return null;
-                    }
-                    if (!hasLegalMove(boardAfterFork, target2Pos.r, target2Pos.c)) {
-                        return null;
-                    }
-
-                    const validateAtDepth = (depth) => {
-                        const currentEval = evaluate(board);
-                        const bestMoves = findBestMoves(board, depth, true);
-
-                        if (bestMoves.length < 2) return false;
-
-                        const forkMove = bestMoves.find(m =>
-                            m.move.fromR === preforkPos.r && m.move.fromC === preforkPos.c &&
-                            m.move.toR === forkRow && m.move.toC === forkCol
-                        );
-
-                        if (!forkMove) return false;
-
-                        const materialGain = forkMove.score - currentEval;
-                        if (materialGain < 2) return false;
-
-                        if (forkMove !== bestMoves[0]) {
-                            if (bestMoves[0].score - forkMove.score > 0.5) return false;
-                        }
-
-                        for (const move of bestMoves) {
-                            if (move === forkMove) continue;
-                            if (move.score >= 2) {
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    };
-
-                    if (!validateAtDepth(4)) return null;
-
-                    return {
-                        board,
-                        forkerType,
-                        preforkPos,
-                        forkPos: { r: forkRow, c: forkCol },
-                        target1Pos,
-                        target2Pos,
-                        target1Type,
-                        target2Type
-                    };
-                }
-
-                self.onmessage = function(e) {
-                    if (e.data === 'generate') {
-                        const puzzle = generateForkPuzzle();
-                        self.postMessage(puzzle);
-                    }
-                };
-            `;
-
-            const blob = new Blob([workerCode], { type: 'application/javascript' });
-            const workerUrl = URL.createObjectURL(blob);
-            return new Worker(workerUrl);
+        let currentForkerType = 2;    // Start with Knight (cycles: 2->3->1->2...)
+
+        function requestPuzzle() {
+            // Generate puzzle in main thread, send to Stockfish for validation
+            const puzzle = generateForkPuzzle(currentForkerType);
+            if (puzzle && stockfishReady && !pendingCandidate) {
+                sendToStockfish(puzzle);
+            } else if (!puzzle || !stockfishReady || pendingCandidate) {
+                // Try again shortly if Stockfish busy or generation failed
+                setTimeout(requestPuzzle, 10);
+            }
         }
 
-        function initPuzzleWorker() {
-            puzzleWorker = createPuzzleWorker();
+        function randomizeForkerType() {
+            // Randomly pick: Knight(2), Bishop(3), or Pawn(1)
+            const types = [1, 2, 3]; // Pawn, Knight, Bishop
+            currentForkerType = types[Math.floor(Math.random() * types.length)];
+        }
 
-            puzzleWorker.onmessage = function(e) {
-                const puzzle = e.data;
+        // ============ PUZZLE GENERATION (runs in main thread) ============
 
-                if (!puzzle) {
-                    console.error("Worker failed to generate puzzle, retrying...");
-                    puzzleWorker.postMessage('generate');
+        function copyBoard(b) {
+            return b.map(row => [...row]);
+        }
+
+        function generateMoves(board, isWhiteToMove) {
+            const moves = [];
+            const friendly = isWhiteToMove ? isWhite : isBlack;
+            const enemy = isWhiteToMove ? isBlack : isWhite;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = board[r][c];
+                    if (!friendly(piece)) continue;
+
+                    const addMove = (toR, toC) => {
+                        if (toR >= 0 && toR < 8 && toC >= 0 && toC < 8) {
+                            const target = board[toR][toC];
+                            if (!friendly(target)) {
+                                moves.push({ fromR: r, fromC: c, toR, toC, captured: target });
+                            }
+                        }
+                    };
+
+                    const addSlide = (dr, dc) => {
+                        for (let i = 1; i < 8; i++) {
+                            const toR = r + dr * i, toC = c + dc * i;
+                            if (toR < 0 || toR >= 8 || toC < 0 || toC >= 8) break;
+                            const target = board[toR][toC];
+                            if (friendly(target)) break;
+                            moves.push({ fromR: r, fromC: c, toR, toC, captured: target });
+                            if (enemy(target)) break;
+                        }
+                    };
+
+                    if (piece === W_PAWN) {
+                        if (r > 0 && board[r-1][c] === EMPTY) {
+                            addMove(r-1, c);
+                            if (r === 6 && board[r-2][c] === EMPTY) addMove(r-2, c);
+                        }
+                        if (r > 0 && c > 0 && enemy(board[r-1][c-1])) addMove(r-1, c-1);
+                        if (r > 0 && c < 7 && enemy(board[r-1][c+1])) addMove(r-1, c+1);
+                    } else if (piece === B_PAWN) {
+                        if (r < 7 && board[r+1][c] === EMPTY) {
+                            addMove(r+1, c);
+                            if (r === 1 && board[r+2][c] === EMPTY) addMove(r+2, c);
+                        }
+                        if (r < 7 && c > 0 && enemy(board[r+1][c-1])) addMove(r+1, c-1);
+                        if (r < 7 && c < 7 && enemy(board[r+1][c+1])) addMove(r+1, c+1);
+                    } else if (piece === W_KNIGHT || piece === B_KNIGHT) {
+                        const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+                        for (const [dr, dc] of knightMoves) addMove(r+dr, c+dc);
+                    } else if (piece === W_BISHOP || piece === B_BISHOP) {
+                        addSlide(-1,-1); addSlide(-1,1); addSlide(1,-1); addSlide(1,1);
+                    } else if (piece === W_ROOK || piece === B_ROOK) {
+                        addSlide(-1,0); addSlide(1,0); addSlide(0,-1); addSlide(0,1);
+                    } else if (piece === W_QUEEN || piece === B_QUEEN) {
+                        addSlide(-1,-1); addSlide(-1,1); addSlide(1,-1); addSlide(1,1);
+                        addSlide(-1,0); addSlide(1,0); addSlide(0,-1); addSlide(0,1);
+                    } else if (piece === W_KING || piece === B_KING) {
+                        for (let dr = -1; dr <= 1; dr++) {
+                            for (let dc = -1; dc <= 1; dc++) {
+                                if (dr !== 0 || dc !== 0) addMove(r+dr, c+dc);
+                            }
+                        }
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function makeMove(board, move) {
+            const newBoard = copyBoard(board);
+            newBoard[move.toR][move.toC] = newBoard[move.fromR][move.fromC];
+            newBoard[move.fromR][move.fromC] = EMPTY;
+            return newBoard;
+        }
+
+        function findKing(board, white) {
+            const king = white ? W_KING : B_KING;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (board[r][c] === king) return { r, c };
+                }
+            }
+            return null;
+        }
+
+        function isSquareAttacked(board, r, c, byWhite) {
+            const attacker = byWhite ? isWhite : isBlack;
+
+            const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+            for (const [dr, dc] of knightMoves) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                    const p = board[nr][nc];
+                    if ((byWhite && p === W_KNIGHT) || (!byWhite && p === B_KNIGHT)) return true;
+                }
+            }
+
+            if (byWhite) {
+                if (r < 7 && c > 0 && board[r+1][c-1] === W_PAWN) return true;
+                if (r < 7 && c < 7 && board[r+1][c+1] === W_PAWN) return true;
+            } else {
+                if (r > 0 && c > 0 && board[r-1][c-1] === B_PAWN) return true;
+                if (r > 0 && c < 7 && board[r-1][c+1] === B_PAWN) return true;
+            }
+
+            for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    if (dr === 0 && dc === 0) continue;
+                    const nr = r + dr, nc = c + dc;
+                    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                        const p = board[nr][nc];
+                        if ((byWhite && p === W_KING) || (!byWhite && p === B_KING)) return true;
+                    }
+                }
+            }
+
+            const checkSlide = (dr, dc, pieces) => {
+                for (let i = 1; i < 8; i++) {
+                    const nr = r + dr * i, nc = c + dc * i;
+                    if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) break;
+                    const p = board[nr][nc];
+                    if (p !== EMPTY) {
+                        if (attacker(p) && pieces.includes(p)) return true;
+                        break;
+                    }
+                }
+                return false;
+            };
+
+            const diagPieces = byWhite ? [W_BISHOP, W_QUEEN] : [B_BISHOP, B_QUEEN];
+            if (checkSlide(-1,-1, diagPieces) || checkSlide(-1,1, diagPieces) ||
+                checkSlide(1,-1, diagPieces) || checkSlide(1,1, diagPieces)) return true;
+
+            const straightPieces = byWhite ? [W_ROOK, W_QUEEN] : [B_ROOK, B_QUEEN];
+            if (checkSlide(-1,0, straightPieces) || checkSlide(1,0, straightPieces) ||
+                checkSlide(0,-1, straightPieces) || checkSlide(0,1, straightPieces)) return true;
+
+            return false;
+        }
+
+        function isInCheck(board, whiteKing) {
+            const king = findKing(board, whiteKing);
+            if (!king) return true;
+            return isSquareAttacked(board, king.r, king.c, !whiteKing);
+        }
+
+        function getAttackedSquares(board, piece, r, c) {
+            const attacks = [];
+
+            if (piece === W_KNIGHT || piece === B_KNIGHT) {
+                const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+                for (const [dr, dc] of knightMoves) {
+                    const nr = r + dr, nc = c + dc;
+                    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                        attacks.push({ r: nr, c: nc });
+                    }
+                }
+            } else if (piece === W_BISHOP || piece === B_BISHOP) {
+                const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
+                for (const [dr, dc] of dirs) {
+                    for (let i = 1; i < 8; i++) {
+                        const nr = r + dr * i, nc = c + dc * i;
+                        if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) break;
+                        attacks.push({ r: nr, c: nc });
+                        if (board[nr][nc] !== EMPTY) break;
+                    }
+                }
+            } else if (piece === W_PAWN) {
+                if (r > 0 && c > 0) attacks.push({ r: r-1, c: c-1 });
+                if (r > 0 && c < 7) attacks.push({ r: r-1, c: c+1 });
+            }
+
+            return attacks;
+        }
+
+        function canPieceCapture(piece, fromR, fromC, targetR, targetC, board) {
+            if (piece === W_KNIGHT || piece === B_KNIGHT) {
+                const dr = Math.abs(targetR - fromR), dc = Math.abs(targetC - fromC);
+                return (dr === 2 && dc === 1) || (dr === 1 && dc === 2);
+            } else if (piece === W_BISHOP || piece === B_BISHOP) {
+                const dr = targetR - fromR, dc = targetC - fromC;
+                if (Math.abs(dr) !== Math.abs(dc) || dr === 0) return false;
+                const stepR = dr > 0 ? 1 : -1, stepC = dc > 0 ? 1 : -1;
+                for (let i = 1; i < Math.abs(dr); i++) {
+                    if (board[fromR + stepR * i][fromC + stepC * i] !== EMPTY) return false;
+                }
+                return true;
+            } else if (piece === W_PAWN) {
+                return targetR === fromR - 1 && Math.abs(targetC - fromC) === 1;
+            }
+            return false;
+        }
+
+        function generateForkPuzzle(forkerType) {
+            const MAX_ATTEMPTS = 1000;
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                const puzzle = tryGeneratePuzzle(forkerType);
+                if (puzzle) return puzzle;
+            }
+            return null;
+        }
+
+        function tryGeneratePuzzle(forkerType) {
+            const board = Array(8).fill(null).map(() => Array(8).fill(EMPTY));
+
+            let targetPieceTypes;
+            if (forkerType === W_BISHOP) {
+                targetPieceTypes = [B_ROOK, B_ROOK, B_KNIGHT, B_KNIGHT];
+            } else {
+                targetPieceTypes = [B_QUEEN, B_ROOK, B_ROOK, B_KNIGHT, B_BISHOP];
+            }
+            const target1Type = targetPieceTypes[Math.floor(Math.random() * targetPieceTypes.length)];
+            let target2Type = targetPieceTypes[Math.floor(Math.random() * targetPieceTypes.length)];
+            if (target1Type === B_QUEEN && target2Type === B_QUEEN) {
+                const nonQueenTypes = targetPieceTypes.filter(t => t !== B_QUEEN);
+                target2Type = nonQueenTypes[Math.floor(Math.random() * nonQueenTypes.length)];
+            }
+
+            let forkRows, forkCols;
+            if (forkerType === W_BISHOP) {
+                forkRows = [2];
+                forkCols = [1, 2, 3, 4, 5, 6];
+            } else if (forkerType === W_PAWN) {
+                forkRows = [3, 4, 5];
+                forkCols = [1, 2, 3, 4, 5, 6];
+            } else {
+                forkRows = [3, 4, 5];
+                forkCols = [0, 1, 2, 3, 4, 5, 6, 7];
+            }
+            const forkRow = forkRows[Math.floor(Math.random() * forkRows.length)];
+            const forkCol = forkCols[Math.floor(Math.random() * forkCols.length)];
+
+            board[forkRow][forkCol] = forkerType;
+            const attacks = getAttackedSquares(board, forkerType, forkRow, forkCol);
+            board[forkRow][forkCol] = EMPTY;
+
+            if (attacks.length < 2) return null;
+
+            const isValidTargetPos = (pos, pieceType, isBishopFork = false) => {
+                if (isBishopFork) {
+                    if (pos.r < 1 || pos.r > 3) return false;
+                } else {
+                    if (pos.r > 4) return false;
+                }
+                if ((pieceType === B_BISHOP) && (pos.r === 0 || pos.r === 7)) return false;
+                return true;
+            };
+
+            const shuffled = attacks.sort(() => Math.random() - 0.5);
+            let target1Pos = null, target2Pos = null;
+
+            const getDiagonalDir = (pos) => {
+                const dr = pos.r - forkRow;
+                const dc = pos.c - forkCol;
+                if ((dr > 0 && dc > 0) || (dr < 0 && dc < 0)) return 'nw-se';
+                return 'ne-sw';
+            };
+
+            const isOppositeDiagonal = (pos1, pos2) => {
+                const dr1 = pos1.r - forkRow, dc1 = pos1.c - forkCol;
+                const dr2 = pos2.r - forkRow, dc2 = pos2.c - forkCol;
+                return getDiagonalDir(pos1) === getDiagonalDir(pos2) &&
+                       Math.sign(dr1) !== Math.sign(dr2);
+            };
+
+            const isBishopFork = (forkerType === W_BISHOP);
+            for (const pos of shuffled) {
+                if (!target1Pos && isValidTargetPos(pos, target1Type, isBishopFork)) {
+                    target1Pos = pos;
+                } else if (target1Pos && !target2Pos && (pos.r !== target1Pos.r || pos.c !== target1Pos.c)) {
+                    if (isValidTargetPos(pos, target2Type, isBishopFork)) {
+                        if (target1Type === B_BISHOP && target2Type === B_BISHOP) {
+                            if ((pos.r + pos.c) % 2 !== (target1Pos.r + target1Pos.c) % 2) {
+                                target2Pos = pos;
+                                break;
+                            }
+                        } else if (forkerType === W_BISHOP) {
+                            if (isOppositeDiagonal(target1Pos, pos)) {
+                                target2Pos = pos;
+                                break;
+                            }
+                        } else {
+                            target2Pos = pos;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!target1Pos || !target2Pos) return null;
+
+            board[target1Pos.r][target1Pos.c] = target1Type;
+            board[target2Pos.r][target2Pos.c] = target2Type;
+
+            if (isSquareAttacked(board, forkRow, forkCol, false)) {
+                return null;
+            }
+
+            let preforkPos = null;
+
+            if (forkerType === W_PAWN) {
+                // For forks on rank 4 (row 4) in columns b,c,f,g, allow double-move
+                let preforkRow = forkRow + 1;
+                const canDoubleMove = forkRow === 4 && [1, 2, 5, 6].includes(forkCol);
+                if (canDoubleMove && Math.random() < 0.5) {
+                    // Try double-move (prefork on rank 2, row 6)
+                    if (board[6][forkCol] === EMPTY && board[5][forkCol] === EMPTY) {
+                        preforkRow = 6;
+                    }
+                }
+                if (preforkRow < 8 && board[preforkRow][forkCol] === EMPTY) {
+                    if (!canPieceCapture(W_PAWN, preforkRow, forkCol, target1Pos.r, target1Pos.c, board) &&
+                        !canPieceCapture(W_PAWN, preforkRow, forkCol, target2Pos.r, target2Pos.c, board)) {
+                        preforkPos = { r: preforkRow, c: forkCol };
+                    }
+                }
+            } else if (forkerType === W_KNIGHT) {
+                const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+                const candidates = [];
+                for (const [dr, dc] of knightMoves) {
+                    const pr = forkRow + dr, pc = forkCol + dc;
+                    if (pr >= 0 && pr < 8 && pc >= 0 && pc < 8 && board[pr][pc] === EMPTY) {
+                        if (!canPieceCapture(W_KNIGHT, pr, pc, target1Pos.r, target1Pos.c, board) &&
+                            !canPieceCapture(W_KNIGHT, pr, pc, target2Pos.r, target2Pos.c, board)) {
+                            candidates.push({ r: pr, c: pc, priority: pr });
+                        }
+                    }
+                }
+                if (candidates.length > 0) {
+                    candidates.sort((a, b) => b.priority - a.priority);
+                    preforkPos = candidates[0];
+                }
+            } else if (forkerType === W_BISHOP) {
+                const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
+                const candidates = [];
+                for (const [dr, dc] of dirs) {
+                    for (let i = 1; i < 8; i++) {
+                        const pr = forkRow + dr * i, pc = forkCol + dc * i;
+                        if (pr < 0 || pr >= 8 || pc < 0 || pc >= 8) break;
+                        if (board[pr][pc] !== EMPTY) break;
+
+                        const testBoard = copyBoard(board);
+                        if (!canPieceCapture(W_BISHOP, pr, pc, target1Pos.r, target1Pos.c, testBoard) &&
+                            !canPieceCapture(W_BISHOP, pr, pc, target2Pos.r, target2Pos.c, testBoard)) {
+                            candidates.push({ r: pr, c: pc });
+                        }
+                    }
+                }
+                if (candidates.length > 0) {
+                    // Randomly pick from valid candidates for variety
+                    preforkPos = candidates[Math.floor(Math.random() * candidates.length)];
+                }
+            }
+
+            if (!preforkPos) return null;
+
+            // Reserved squares - 2D boolean array
+            const reserved = Array(8).fill(null).map(() => Array(8).fill(false));
+
+            // Reserve forker path (bishop diagonal or pawn double-move)
+            if (forkerType === W_BISHOP) {
+                const dr = Math.sign(forkRow - preforkPos.r);
+                const dc = Math.sign(forkCol - preforkPos.c);
+                let r = preforkPos.r + dr, c = preforkPos.c + dc;
+                while (r !== forkRow || c !== forkCol) {
+                    reserved[r][c] = true;
+                    r += dr;
+                    c += dc;
+                }
+            } else if (forkerType === W_PAWN && preforkPos.r === 6 && forkRow === 4) {
+                reserved[5][forkCol] = true;
+            }
+
+            board[preforkPos.r][preforkPos.c] = forkerType;
+
+            const whiteKingside = Math.random() < 0.5;
+            const blackKingside = Math.random() < 0.5;
+
+            // Reserve castle corner squares
+            // White: kingside => h1; queenside => a1, b1
+            // Black: kingside => h8; queenside => a8, b8
+            if (whiteKingside) {
+                reserved[7][7] = true;  // h1
+            } else {
+                reserved[7][0] = true;  // a1
+                reserved[7][1] = true;  // b1
+            }
+            if (blackKingside) {
+                reserved[0][7] = true;  // h8
+            } else {
+                reserved[0][0] = true;  // a8
+                reserved[0][1] = true;  // b8
+            }
+
+            const wCastleCols = whiteKingside ? [5, 6, 7] : [0, 1, 2];
+            const bCastleCols = blackKingside ? [5, 6, 7] : [0, 1, 2];
+
+            const wKingPos = whiteKingside ? { r: 7, c: 6 } : { r: 7, c: 2 };
+            const bKingPos = blackKingside ? { r: 0, c: 6 } : { r: 0, c: 2 };
+
+            if (board[wKingPos.r][wKingPos.c] !== EMPTY || board[bKingPos.r][bKingPos.c] !== EMPTY) {
+                return null;
+            }
+
+            board[wKingPos.r][wKingPos.c] = W_KING;
+            board[bKingPos.r][bKingPos.c] = B_KING;
+
+            const wCastledRookPos = whiteKingside ? { r: 7, c: 5 } : { r: 7, c: 3 };
+            const wOtherRookPos = whiteKingside ? { r: 7, c: 0 } : { r: 7, c: 7 };
+            const bCastledRookPos = blackKingside ? { r: 0, c: 5 } : { r: 0, c: 3 };
+            const bOtherRookPos = blackKingside ? { r: 0, c: 0 } : { r: 0, c: 7 };
+
+            if (board[wCastledRookPos.r][wCastledRookPos.c] === EMPTY) board[wCastledRookPos.r][wCastledRookPos.c] = W_ROOK;
+            if (board[wOtherRookPos.r][wOtherRookPos.c] === EMPTY) board[wOtherRookPos.r][wOtherRookPos.c] = W_ROOK;
+            const targetRookCount = (target1Type === B_ROOK ? 1 : 0) + (target2Type === B_ROOK ? 1 : 0);
+            if (targetRookCount < 2 && board[bCastledRookPos.r][bCastledRookPos.c] === EMPTY) {
+                board[bCastledRookPos.r][bCastledRookPos.c] = B_ROOK;
+            }
+
+            const columnHasPawn = (c, pawnType) => {
+                for (let r = 0; r < 8; r++) {
+                    if (board[r][c] === pawnType) return true;
+                }
+                return false;
+            };
+
+            const attacksForkSquare = (piece, r, c) => {
+                const dr = forkRow - r, dc = forkCol - c;
+                const absDr = Math.abs(dr), absDc = Math.abs(dc);
+
+                if (piece === B_PAWN) {
+                    return dr === 1 && absDc === 1;
+                }
+                if (piece === B_KNIGHT) {
+                    return (absDr === 2 && absDc === 1) || (absDr === 1 && absDc === 2);
+                }
+                if (piece === B_BISHOP) {
+                    return absDr === absDc && absDr > 0;
+                }
+                if (piece === B_ROOK) {
+                    return (dr === 0 || dc === 0) && (absDr + absDc > 0);
+                }
+                if (piece === B_QUEEN) {
+                    return (absDr === absDc && absDr > 0) || ((dr === 0 || dc === 0) && (absDr + absDc > 0));
+                }
+                return false;
+            };
+
+            // Castle pawns - explicit placement, ignore reserved (only check forker path)
+            for (const c of wCastleCols) {
+                if (columnHasPawn(c, W_PAWN)) continue;
+                for (let r = 6; r >= 4; r--) {
+                    if (r === forkRow && c === forkCol) continue;  // No white pawn on fork square
+                    if (board[r][c] === EMPTY) {
+                        board[r][c] = W_PAWN;
+                        break;
+                    }
+                }
+            }
+            for (const c of bCastleCols) {
+                if (columnHasPawn(c, B_PAWN)) continue;
+                const wouldAttackFork = forkRow === 2 && Math.abs(forkCol - c) === 1;
+                if (wouldAttackFork && board[2][c] === EMPTY) {
+                    board[2][c] = B_PAWN;
+                } else {
+                    for (let r = 1; r <= 3; r++) {
+                        if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c)) {
+                            board[r][c] = B_PAWN;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            for (const c of [3, 4]) {
+                if (!columnHasPawn(c, W_PAWN)) {
+                    // Randomly choose d3/e3 (row 5) or d4/e4 (row 4)
+                    const startRow = Math.random() < 0.5 ? 4 : 5;
+                    const rows = startRow === 4 ? [4, 5, 6] : [5, 4, 6];
+                    for (const r of rows) {
+                        if (r === forkRow && c === forkCol) continue;  // No white pawn on fork square
+                        if (board[r][c] === EMPTY && !reserved[r][c]) {
+                            board[r][c] = W_PAWN;
+                            break;
+                        }
+                    }
+                }
+
+                if (!columnHasPawn(c, B_PAWN)) {
+                    for (let r = 2; r <= 3; r++) {
+                        if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c) && !reserved[r][c]) {
+                            board[r][c] = B_PAWN;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Remaining pawns (non-castle, non-d/e columns)
+            for (let c = 0; c < 8; c++) {
+                if (!columnHasPawn(c, W_PAWN) && !wCastleCols.includes(c) && c !== 3 && c !== 4) {
+                    for (let r = 6; r >= 4; r--) {
+                        if (r === forkRow && c === forkCol) continue;  // No white pawn on fork square
+                        if (board[r][c] === EMPTY && !reserved[r][c]) {
+                            board[r][c] = W_PAWN;
+                            break;
+                        }
+                    }
+                }
+                if (!columnHasPawn(c, B_PAWN) && !bCastleCols.includes(c) && c !== 3 && c !== 4) {
+                    for (let r = 1; r <= 3; r++) {
+                        if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c) && !reserved[r][c]) {
+                            board[r][c] = B_PAWN;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            const addPiece = (piece, rows) => {
+                for (let attempt = 0; attempt < 50; attempt++) {
+                    const r = rows[Math.floor(Math.random() * rows.length)];
+                    const c = Math.floor(Math.random() * 8);
+                    if (r === forkRow && c === forkCol) continue;  // Keep fork square empty/pawn only
+                    if (board[r][c] === EMPTY && !reserved[r][c]) {
+                        if (piece >= B_PAWN && attacksForkSquare(piece, r, c)) continue;
+                        board[r][c] = piece;
+                        return { r, c };
+                    }
+                }
+                return null;
+            };
+
+            const addBishopPair = (piece, rows) => {
+                const validRows = rows.filter(r => r !== 0 && r !== 7);
+                if (validRows.length === 0) return false;
+
+                let placedColors = new Set();
+
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (board[r][c] === piece) {
+                            placedColors.add((r + c) % 2);
+                        }
+                    }
+                }
+
+                for (let needed = 2 - placedColors.size; needed > 0; needed--) {
+                    let placed = false;
+                    for (let attempt = 0; attempt < 50 && !placed; attempt++) {
+                        const r = validRows[Math.floor(Math.random() * validRows.length)];
+                        const c = Math.floor(Math.random() * 8);
+                        if (r === forkRow && c === forkCol) continue;  // Keep fork square empty/pawn only
+                        const sqColor = (r + c) % 2;
+                        if (board[r][c] === EMPTY && !placedColors.has(sqColor) && !reserved[r][c]) {
+                            if (piece === B_BISHOP && attacksForkSquare(piece, r, c)) continue;
+                            board[r][c] = piece;
+                            placedColors.add(sqColor);
+                            placed = true;
+                        }
+                    }
+                }
+                return true;
+            };
+
+            const countPieces = (type) => {
+                let count = 0;
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (board[r][c] === type) count++;
+                    }
+                }
+                return count;
+            };
+
+            addPiece(W_KNIGHT, [5, 6]);
+            if (forkerType !== W_KNIGHT) addPiece(W_KNIGHT, [5, 6]);
+
+            if (forkerType === W_BISHOP) {
+                const forkingBishopColor = (preforkPos.r + preforkPos.c) % 2;
+                const otherColor = 1 - forkingBishopColor;
+                let placed = false;
+                for (let attempt = 0; attempt < 50 && !placed; attempt++) {
+                    const r = 5 + Math.floor(Math.random() * 3);
+                    const c = Math.floor(Math.random() * 8);
+                    if (r === forkRow && c === forkCol) continue;  // Keep fork square empty/pawn only
+                    if (board[r][c] === EMPTY && (r + c) % 2 === otherColor && !reserved[r][c]) {
+                        board[r][c] = W_BISHOP;
+                        placed = true;
+                    }
+                }
+            } else {
+                addBishopPair(W_BISHOP, [5, 6, 7]);
+            }
+
+            const knightsNeeded = 2 - countPieces(B_KNIGHT);
+            for (let i = 0; i < knightsNeeded; i++) addPiece(B_KNIGHT, [1, 2]);
+
+            addBishopPair(B_BISHOP, [1, 2]);
+
+            // Black queen on rows 0-2 (ranks 8-6), avoiding castle zone and fork attacks
+            if (countPieces(B_QUEEN) === 0) {
+                let placed = false;
+                for (let attempt = 0; attempt < 100 && !placed; attempt++) {
+                    const r = Math.floor(Math.random() * 3);  // rows 0, 1, 2
+                    const c = Math.floor(Math.random() * 8);
+                    if (r === forkRow && c === forkCol) continue;  // Keep fork square empty/pawn only
+                    if (board[r][c] === EMPTY && !reserved[r][c] && !attacksForkSquare(B_QUEEN, r, c)) {
+                        board[r][c] = B_QUEEN;
+                        placed = true;
+                    }
+                }
+            }
+
+            const bRooksNeeded = 2 - countPieces(B_ROOK);
+            if (bRooksNeeded > 0 && board[bOtherRookPos.r][bOtherRookPos.c] === EMPTY) {
+                board[bOtherRookPos.r][bOtherRookPos.c] = B_ROOK;
+            }
+
+            // White queen LAST on rows 5-7 (ranks 3-1), avoiding castle zone
+            {
+                let placed = false;
+                for (let attempt = 0; attempt < 100 && !placed; attempt++) {
+                    const r = 5 + Math.floor(Math.random() * 3);  // rows 5, 6, 7
+                    const c = Math.floor(Math.random() * 8);
+                    if (r === forkRow && c === forkCol) continue;  // Keep fork square empty/pawn only
+                    if (board[r][c] === EMPTY && !reserved[r][c]) {
+                        board[r][c] = W_QUEEN;
+                        placed = true;
+                    }
+                }
+            }
+
+            // Validate exact piece counts
+            const expectedCounts = {
+                [W_PAWN]: 8, [W_ROOK]: 2, [W_BISHOP]: 2, [W_KNIGHT]: 2, [W_QUEEN]: 1, [W_KING]: 1,
+                [B_PAWN]: 8, [B_ROOK]: 2, [B_BISHOP]: 2, [B_KNIGHT]: 2, [B_QUEEN]: 1, [B_KING]: 1
+            };
+            for (const [pieceType, expected] of Object.entries(expectedCounts)) {
+                if (countPieces(parseInt(pieceType)) !== expected) {
+                    return null;
+                }
+            }
+
+            if (isInCheck(board, true) || isInCheck(board, false)) {
+                return null;
+            }
+
+            const boardAfterFork = copyBoard(board);
+            boardAfterFork[forkRow][forkCol] = boardAfterFork[preforkPos.r][preforkPos.c];
+            boardAfterFork[preforkPos.r][preforkPos.c] = EMPTY;
+
+            const hasLegalMove = (b, r, c) => {
+                const piece = b[r][c];
+                if (piece === EMPTY) return false;
+                const isWhitePiece = isWhite(piece);
+                const allMoves = generateMoves(b, isWhitePiece);
+                for (const move of allMoves) {
+                    if (move.fromR === r && move.fromC === c) {
+                        const newBoard = makeMove(b, move);
+                        if (!isInCheck(newBoard, isWhitePiece)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            if (!hasLegalMove(boardAfterFork, target1Pos.r, target1Pos.c)) {
+                return null;
+            }
+            if (!hasLegalMove(boardAfterFork, target2Pos.r, target2Pos.c)) {
+                return null;
+            }
+
+            // Quick validation: reject if any non-fork move captures rook/queen
+            const allMoves = generateMoves(board, true);
+            for (const move of allMoves) {
+                // Skip the fork move itself
+                if (move.fromR === preforkPos.r && move.fromC === preforkPos.c &&
+                    move.toR === forkRow && move.toC === forkCol) continue;
+                // Reject if another move captures rook or queen
+                if (move.captured === B_ROOK || move.captured === B_QUEEN) {
+                    return null;
+                }
+            }
+
+            // Return candidate - deeper validation by Stockfish in main thread
+            return {
+                board,
+                forkerType,
+                preforkPos,
+                forkPos: { r: forkRow, c: forkCol },
+                target1Pos,
+                target2Pos,
+                target1Type,
+                target2Type
+            };
+        }
+
+        // Convert puzzle fork move to UCI notation (e.g., "b3c5")
+        function puzzleToUCI(puzzle) {
+            const cols = 'abcdefgh';
+            const from = cols[puzzle.preforkPos.c] + (8 - puzzle.preforkPos.r);
+            const to = cols[puzzle.forkPos.c] + (8 - puzzle.forkPos.r);
+            return from + to;
+        }
+
+        function initStockfish() {
+            stockfishWorker = new Worker('stockfish.js');
+
+            stockfishWorker.onmessage = function(e) {
+                const line = e.data;
+
+                // Wait for ready
+                if (line === 'readyok') {
+                    stockfishReady = true;
+                    requestPuzzle();
                     return;
                 }
 
-                if (waitingForPuzzle) {
-                    // We were waiting for this puzzle - use it immediately
-                    waitingForPuzzle = false;
-                    currentPuzzle = puzzle;
+                // Accumulate multipv info lines
+                if (line.startsWith('info depth') && line.includes(' pv ')) {
+                    stockfishLines.push(line);
+                }
 
-                    // Reset timer for new puzzle
+                // When we get bestmove, evaluate the candidate
+                if (line.startsWith('bestmove') && pendingCandidate) {
+                    validateWithStockfish();
+                }
+            };
+
+            // Initialize Stockfish
+            stockfishWorker.postMessage('uci');
+            stockfishWorker.postMessage('setoption name MultiPV value 10');
+            stockfishWorker.postMessage('isready');
+        }
+
+        function validateWithStockfish() {
+            const candidate = pendingCandidate;
+            const forkUCI = puzzleToUCI(candidate);
+
+            // Parse the final depth multipv lines to get top moves with scores
+            // Only look at lines from the maximum depth
+            const maxDepth = Math.max(...stockfishLines.map(l => {
+                const m = l.match(/depth (\d+)/);
+                return m ? parseInt(m[1]) : 0;
+            }));
+
+            const finalLines = stockfishLines.filter(l => l.includes(`depth ${maxDepth} `));
+
+            let forkScore = null;
+            let bestNonForkScore = null;
+            const allMoves = [];
+
+            for (const line of finalLines) {
+                const multipvMatch = line.match(/multipv (\d+)/);
+                const scoreMatch = line.match(/score cp (-?\d+)/);
+                const pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8])/);
+
+                if (multipvMatch && scoreMatch && pvMatch) {
+                    const multipv = parseInt(multipvMatch[1]);
+                    const score = parseInt(scoreMatch[1]);
+                    const move = pvMatch[1];
+                    allMoves.push({multipv, score, move});
+
+                    if (move === forkUCI) {
+                        forkScore = score;
+                    } else if (multipv <= 2) {
+                        bestNonForkScore = score;
+                    }
+                }
+            }
+
+            stockfishLines = [];
+            pendingCandidate = null;
+
+            // Validate (scores in centipawns):
+            // - Fork must appear in top moves
+            // - Fork should be at least 200cp (2 pawns) better than second-best
+            // - Second-best move should be worth at most 200cp
+            const isValid = forkScore !== null &&
+                           (bestNonForkScore === null || (
+                               forkScore - bestNonForkScore >= 200 &&
+                               bestNonForkScore <= 200
+                           ));
+
+            if (isValid) {
+                // Valid puzzle! Randomize next forker type
+                randomizeForkerType();
+
+                if (waitingForPuzzle) {
+                    waitingForPuzzle = false;
+                    currentPuzzle = candidate;
                     timeLeft = timeLimit;
                     document.getElementById('timer').textContent = timeLeft;
                     document.querySelector('.timer').classList.remove('urgent');
-
                     renderBoard();
-
-                    // Hide loading, show game, restart timer
                     document.getElementById('loading-screen').classList.remove('active');
                     document.getElementById('game-screen').classList.add('active');
                     timerInterval = setInterval(updateTimer, 1000);
                 } else {
-                    // Add to queue
-                    puzzleQueue.push(puzzle);
+                    puzzleQueue.push(candidate);
                 }
+            }
 
-                // Keep generating until queue is full
-                if (puzzleQueue.length < PUZZLE_QUEUE_SIZE) {
-                    puzzleWorker.postMessage('generate');
-                }
-            };
+            // Keep generating until queue is full
+            if (puzzleQueue.length < PUZZLE_QUEUE_SIZE) {
+                requestPuzzle();
+            }
+        }
 
-            // Start filling the queue immediately
-            puzzleWorker.postMessage('generate');
+        function sendToStockfish(puzzle) {
+            pendingCandidate = puzzle;
+            stockfishLines = [];
+            const fen = boardToFEN(puzzle.board);
+            stockfishWorker.postMessage('position fen ' + fen);
+            stockfishWorker.postMessage('go depth 10 multipv 2');
+        }
+
+        function initPuzzleGeneration() {
+            // Just initialize Stockfish - puzzle generation runs in main thread
+            initStockfish();
         }
 
         // ============ UI ============
@@ -1509,7 +1492,7 @@
         function renderBoard() {
             if (!currentPuzzle) return;
 
-            const squares = document.querySelectorAll('.square');
+            const squares = document.querySelectorAll('#chessboard .square');
             squares.forEach(sq => {
                 const r = parseInt(sq.dataset.row);
                 const c = parseInt(sq.dataset.col);
@@ -1747,14 +1730,14 @@
 
                 // Refill queue if needed
                 if (puzzleQueue.length < PUZZLE_QUEUE_SIZE) {
-                    puzzleWorker.postMessage('generate');
+                    requestPuzzle();
                 }
             } else {
                 // No puzzle ready - show loading and wait for worker
                 document.getElementById('game-screen').classList.remove('active');
                 document.getElementById('loading-screen').classList.add('active');
                 waitingForPuzzle = true;
-                puzzleWorker.postMessage('generate');
+                requestPuzzle();
             }
         }
 
@@ -1801,13 +1784,13 @@
 
                 // Refill queue
                 if (puzzleQueue.length < PUZZLE_QUEUE_SIZE) {
-                    puzzleWorker.postMessage('generate');
+                    requestPuzzle();
                 }
             } else {
                 // Show loading and wait for worker
                 document.getElementById('loading-screen').classList.add('active');
                 waitingForPuzzle = true;
-                puzzleWorker.postMessage('generate');
+                requestPuzzle();
             }
 
             // Loop the jingle continuously
@@ -1862,6 +1845,15 @@
                                  currentPuzzle.target2Pos.r, currentPuzzle.target2Pos.c);
                 }
             }, 100);
+        }
+
+        function goToSplash() {
+            // Hide all screens first
+            document.getElementById('end-screen').classList.remove('active');
+            document.getElementById('game-screen').classList.remove('active');
+            document.getElementById('loading-screen').classList.remove('active');
+            // Show splash
+            document.getElementById('splash-screen').classList.add('active');
         }
 
         function renderEndBoard() {
@@ -2008,7 +2000,7 @@
         window.onload = function() {
             initAudio();
             initArrowMarker();
-            initPuzzleWorker();
+            initPuzzleGeneration();
         };
     </script>
 </body>

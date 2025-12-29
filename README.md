@@ -1,30 +1,39 @@
-# Knight Moves Trainer
+# Chess Trainers
 
-A mini-game to help learn and visualize knight moves in chess.
+Two mini-games to practice chess tactics and visualization.
 
 **Play now:** https://sloisel.github.io/knight-trainer/
 
-## How to Play
+## Games
 
+### Knight Moves Trainer
+Practice visualizing knight moves.
 1. A knight appears on the chessboard
 2. Click all squares the knight can attack
 3. Find all valid moves to advance to the next round
-4. You have 30 seconds - score as many points as you can!
+4. Score as many points as you can before time runs out!
 
-## Scoring
-
-- +1 for each correct square
-- -1 for each mistake
+### Fork Trainer
+Practice spotting chess forks (knight, bishop, and pawn forks).
+1. Find the piece that can fork two enemy pieces
+2. Drag it to the forking square
+3. Score points for each correct fork
+4. Difficulty levels: Easy (60s), Medium (180s), Hard (300s)
 
 ## Installation
 
-Works as a standalone webpage. On iPad/iPhone, use "Add to Home Screen" for an app-like experience.
+Works as standalone webpages. On iPad/iPhone, use "Add to Home Screen" for an app-like offline experience.
+
+- Knight Trainer: [index.html](https://sloisel.github.io/knight-trainer/)
+- Fork Trainer: [forks.html](https://sloisel.github.io/knight-trainer/forks.html)
 
 ## Credits
 
 Music: "I Got a Stick Arr Bryan Teoh" by Kevin MacLeod (incompetech.com)
 Licensed under [Creative Commons: By Attribution 4.0](http://creativecommons.org/licenses/by/4.0/)
 
+Chess engine: Stockfish.js (Fork Trainer only)
+
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+MIT License

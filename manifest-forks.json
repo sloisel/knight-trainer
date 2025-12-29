@@ -1,0 +1,30 @@
+{
+  "name": "Fork Trainer",
+  "short_name": "Fork Trainer",
+  "description": "Practice spotting chess forks - knight, bishop, and pawn forks",
+  "start_url": "/knight-trainer/forks.html",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "assets/fork-icon-152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/fork-icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/fork-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
