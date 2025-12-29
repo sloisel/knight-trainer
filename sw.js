@@ -37,23 +37,8 @@ self.addEventListener('fetch', event => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
-  // Use network-first for stockfish.js (loaded as Worker)
-  if (event.request.url.includes('stockfish.js')) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          if (response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
-    return;
-  }
+  // Don't intercept stockfish.js at all - let browser handle it directly
+  if (event.request.url.includes('stockfish')) return;
 
   event.respondWith(
     caches.match(event.request)
