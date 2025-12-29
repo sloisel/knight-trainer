@@ -53,23 +53,42 @@
             display: flex;
         }
 
-        .loading-content {
-            display: flex;
+        .board-loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
             flex-direction: column;
+            justify-content: center;
             align-items: center;
-            gap: 20px;
+            gap: 15px;
+            z-index: 20;
+            border-radius: 5px;
         }
 
-        .loading-content p {
-            font-size: 1.5em;
+        .board-loading-overlay.active {
+            display: flex;
+        }
+
+        .board-loading-overlay p {
+            font-size: 1.3em;
             color: #ffd700;
+            text-shadow:
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                2px 2px 0 #000;
+            margin: 0;
         }
 
         .spinner {
-            width: 60px;
-            height: 60px;
-            border: 5px solid #333;
-            border-top: 5px solid #ffd700;
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid #ffd700;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -479,7 +498,12 @@
                         <span>8</span><span>7</span><span>6</span><span>5</span>
                         <span>4</span><span>3</span><span>2</span><span>1</span>
                     </div>
-                    <div class="chessboard" id="chessboard"></div>
+                    <div class="chessboard" id="chessboard">
+                        <div id="board-loading" class="board-loading-overlay">
+                            <div class="spinner"></div>
+                            <p>Generating puzzle...</p>
+                        </div>
+                    </div>
                     <div class="rank-labels">
                         <span>8</span><span>7</span><span>6</span><span>5</span>
                         <span>4</span><span>3</span><span>2</span><span>1</span>
@@ -520,13 +544,6 @@
         <button class="btn" onclick="goToSplash()">Play Again</button>
     </div>
 
-    <!-- Loading Screen -->
-    <div id="loading-screen" class="screen">
-        <div class="loading-content">
-            <div class="spinner"></div>
-            <p>Generating puzzle...</p>
-        </div>
-    </div>
 
     <!-- Audio elements -->
     <audio id="buzzer-sound" preload="auto"></audio>
@@ -1436,8 +1453,7 @@
                     solutionRevealed = false;
                     document.getElementById('reveal-btn').textContent = 'Reveal Solution';
                     renderBoard();
-                    document.getElementById('loading-screen').classList.remove('active');
-                    document.getElementById('game-screen').classList.add('active');
+                    document.getElementById('board-loading').classList.remove('active');
                     timerInterval = setInterval(updateTimer, 1000);
                 } else {
                     puzzleQueue.push(candidate);
@@ -1770,9 +1786,8 @@
                     requestPuzzle();
                 }
             } else {
-                // No puzzle ready - show loading and wait for worker
-                document.getElementById('game-screen').classList.remove('active');
-                document.getElementById('loading-screen').classList.add('active');
+                // No puzzle ready - show loading overlay on board
+                document.getElementById('board-loading').classList.add('active');
                 waitingForPuzzle = true;
                 requestPuzzle();
             }
@@ -1819,8 +1834,9 @@
                     requestPuzzle();
                 }
             } else {
-                // Show loading and wait for worker
-                document.getElementById('loading-screen').classList.add('active');
+                // Show loading overlay on board and wait for worker
+                document.getElementById('game-screen').classList.add('active');
+                document.getElementById('board-loading').classList.add('active');
                 waitingForPuzzle = true;
                 requestPuzzle();
             }
@@ -1884,7 +1900,7 @@
             // Hide all screens first
             document.getElementById('end-screen').classList.remove('active');
             document.getElementById('game-screen').classList.remove('active');
-            document.getElementById('loading-screen').classList.remove('active');
+            document.getElementById('board-loading').classList.remove('active');
             // Show splash
             document.getElementById('splash-screen').classList.add('active');
         }
