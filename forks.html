@@ -1013,6 +1013,7 @@
 
             // Reserve forker path (bishop diagonal or pawn double-move)
             if (forkerType === W_BISHOP) {
+                // Reserve path from prefork to fork square
                 const dr = Math.sign(forkRow - preforkPos.r);
                 const dc = Math.sign(forkCol - preforkPos.c);
                 let r = preforkPos.r + dr, c = preforkPos.c + dc;
@@ -1020,6 +1021,24 @@
                     reserved[r][c] = true;
                     r += dr;
                     c += dc;
+                }
+                // Reserve path from fork square to target1
+                const dr1 = Math.sign(target1Pos.r - forkRow);
+                const dc1 = Math.sign(target1Pos.c - forkCol);
+                r = forkRow + dr1; c = forkCol + dc1;
+                while (r !== target1Pos.r || c !== target1Pos.c) {
+                    reserved[r][c] = true;
+                    r += dr1;
+                    c += dc1;
+                }
+                // Reserve path from fork square to target2
+                const dr2 = Math.sign(target2Pos.r - forkRow);
+                const dc2 = Math.sign(target2Pos.c - forkCol);
+                r = forkRow + dr2; c = forkCol + dc2;
+                while (r !== target2Pos.r || c !== target2Pos.c) {
+                    reserved[r][c] = true;
+                    r += dr2;
+                    c += dc2;
                 }
             } else if (forkerType === W_PAWN && preforkPos.r === 6 && forkRow === 4) {
                 reserved[5][forkCol] = true;
@@ -1100,12 +1119,12 @@
                 return false;
             };
 
-            // Castle pawns - explicit placement, ignore reserved (only check forker path)
+            // Castle pawns - check reserved to avoid blocking bishop diagonals
             for (const c of wCastleCols) {
                 if (columnHasPawn(c, W_PAWN)) continue;
                 for (let r = 6; r >= 4; r--) {
                     if (r === forkRow && c === forkCol) continue;  // No white pawn on fork square
-                    if (board[r][c] === EMPTY) {
+                    if (board[r][c] === EMPTY && !reserved[r][c]) {
                         board[r][c] = W_PAWN;
                         break;
                     }
@@ -1114,11 +1133,11 @@
             for (const c of bCastleCols) {
                 if (columnHasPawn(c, B_PAWN)) continue;
                 const wouldAttackFork = forkRow === 2 && Math.abs(forkCol - c) === 1;
-                if (wouldAttackFork && board[2][c] === EMPTY) {
+                if (wouldAttackFork && board[2][c] === EMPTY && !reserved[2][c]) {
                     board[2][c] = B_PAWN;
                 } else {
                     for (let r = 1; r <= 3; r++) {
-                        if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c)) {
+                        if (board[r][c] === EMPTY && !attacksForkSquare(B_PAWN, r, c) && !reserved[r][c]) {
                             board[r][c] = B_PAWN;
                             break;
                         }
