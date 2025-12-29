@@ -1210,15 +1210,16 @@
                 return count;
             };
 
-            addPiece(W_KNIGHT, [5, 6]);
-            if (forkerType !== W_KNIGHT) addPiece(W_KNIGHT, [5, 6]);
+            // White pieces on first 5 ranks (rows 3-7)
+            addPiece(W_KNIGHT, [3, 4, 5, 6, 7]);
+            if (forkerType !== W_KNIGHT) addPiece(W_KNIGHT, [3, 4, 5, 6, 7]);
 
             if (forkerType === W_BISHOP) {
                 const forkingBishopColor = (preforkPos.r + preforkPos.c) % 2;
                 const otherColor = 1 - forkingBishopColor;
                 let placed = false;
                 for (let attempt = 0; attempt < 50 && !placed; attempt++) {
-                    const r = 5 + Math.floor(Math.random() * 3);
+                    const r = 3 + Math.floor(Math.random() * 5);  // rows 3-7
                     const c = Math.floor(Math.random() * 8);
                     if (r === forkRow && c === forkCol) continue;  // Keep fork square empty/pawn only
                     if (board[r][c] === EMPTY && (r + c) % 2 === otherColor && !reserved[r][c]) {
@@ -1227,13 +1228,14 @@
                     }
                 }
             } else {
-                addBishopPair(W_BISHOP, [5, 6, 7]);
+                addBishopPair(W_BISHOP, [3, 4, 5, 6, 7]);
             }
 
+            // Black pieces on last 5 ranks (rows 0-4)
             const knightsNeeded = 2 - countPieces(B_KNIGHT);
-            for (let i = 0; i < knightsNeeded; i++) addPiece(B_KNIGHT, [1, 2]);
+            for (let i = 0; i < knightsNeeded; i++) addPiece(B_KNIGHT, [0, 1, 2, 3, 4]);
 
-            addBishopPair(B_BISHOP, [1, 2]);
+            addBishopPair(B_BISHOP, [1, 2, 3, 4]);
 
             // Black queen on rows 0-2 (ranks 8-6), avoiding castle zone and fork attacks
             if (countPieces(B_QUEEN) === 0) {
