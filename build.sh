@@ -1,22 +1,12 @@
 #!/bin/bash
 
-# Build script for Knight Moves Trainer
-# Embeds base64-encoded assets into the HTML template
+# Build script for Chess Trainers
+# Embeds base64-encoded assets into HTML templates
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEMPLATE="$SCRIPT_DIR/src/game.template.html"
-OUTPUT="$SCRIPT_DIR/index.html"
 ASSETS_DIR="$SCRIPT_DIR/assets"
-
-echo "Building Knight Moves Trainer..."
-
-# Check template exists
-if [ ! -f "$TEMPLATE" ]; then
-    echo "Error: Template not found at $TEMPLATE"
-    exit 1
-fi
 
 # Base64 encode assets to temp files (avoids argument length limits)
 echo "Encoding assets..."
@@ -30,10 +20,20 @@ cat "$ASSETS_DIR/icon.svg" | base64 | tr -d '\n' > "$TMPDIR/icon.b64"
 cat "$ASSETS_DIR/I Got a Stick Arr Bryan Teoh.mp3" | base64 | tr -d '\n' > "$TMPDIR/jingle.b64"
 cat "$ASSETS_DIR/NotoSansSymbols2-Regular.ttf" | base64 | tr -d '\n' > "$TMPDIR/font.b64"
 
-echo "Injecting assets into template..."
+# Function to build a single game
+build_game() {
+    local TEMPLATE="$1"
+    local OUTPUT="$2"
+    local NAME="$3"
 
-# Use Python for reliable substitution with large strings
-python3 << EOF
+    echo "Building $NAME..."
+
+    if [ ! -f "$TEMPLATE" ]; then
+        echo "Error: Template not found at $TEMPLATE"
+        return 1
+    fi
+
+    python3 << EOF
 import sys
 
 with open("$TEMPLATE", "r") as f:
@@ -56,8 +56,16 @@ with open("$OUTPUT", "w") as f:
     f.write(content)
 EOF
 
+    echo "  -> $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
+}
+
+# Build Knight Moves Trainer
+build_game "$SCRIPT_DIR/src/game.template.html" "$SCRIPT_DIR/index.html" "Knight Moves Trainer"
+
+# Build Fork Trainer
+build_game "$SCRIPT_DIR/src/forks.template.html" "$SCRIPT_DIR/forks.html" "Fork Trainer"
+
 # Cleanup
 rm -rf "$TMPDIR"
 
-echo "Build complete: $OUTPUT"
-echo "File size: $(du -h "$OUTPUT" | cut -f1)"
+echo "Build complete!"
