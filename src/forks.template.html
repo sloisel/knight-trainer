@@ -456,18 +456,14 @@
         </svg>
         <h1>Fork Trainer</h1>
         <p style="margin-bottom: 10px; color: #aaa;">By S. Loisel</p>
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
-            <button class="btn" onclick="startGame(60)" style="background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);">Easy<br><small>60s</small></button>
-            <button class="btn" onclick="startGame(30)">Medium<br><small>30s</small></button>
-            <button class="btn" onclick="startGame(15)" style="background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);">Hard<br><small>15s</small></button>
-        </div>
+        <button class="btn" onclick="startGame()" style="margin-top: 10px;">Play</button>
     </div>
 
     <!-- Game Screen -->
     <div id="game-screen" class="screen">
         <div class="game-container">
             <div class="game-info">
-                <div class="timer">Time: <span id="timer">30</span>s</div>
+                <div class="timer"><span id="timer">00:00:00</span></div>
                 <div class="score">Score: <span id="score">0</span></div>
             </div>
             <svg id="arrow-overlay" class="arrow-overlay"></svg>
@@ -495,6 +491,10 @@
                     <span>e</span><span>f</span><span>g</span><span>h</span>
                     <span class="corner"></span>
                 </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button id="reveal-btn" class="btn" onclick="handleRevealNext()">Reveal Solution</button>
+                <button class="btn" onclick="quitGame()" style="background: #666;">Quit</button>
             </div>
         </div>
     </div>
@@ -595,10 +595,10 @@
         let board = [];
         let currentPuzzle = null;
         let score = 0;
-        let timeLeft = 30;
-        let timeLimit = 30; // Current difficulty setting
+        let timeElapsed = 0;
         let timerInterval = null;
         let gameActive = false;
+        let solutionRevealed = false;
         let draggingPiece = null;
         let dragElement = null;
 
@@ -1428,9 +1428,10 @@
                 if (waitingForPuzzle) {
                     waitingForPuzzle = false;
                     currentPuzzle = candidate;
-                    timeLeft = timeLimit;
-                    document.getElementById('timer').textContent = timeLeft;
-                    document.querySelector('.timer').classList.remove('urgent');
+                    timeElapsed = 0;
+                    document.getElementById('timer').textContent = formatTime(timeElapsed);
+                    solutionRevealed = false;
+                    document.getElementById('reveal-btn').textContent = 'Reveal Solution';
                     renderBoard();
                     document.getElementById('loading-screen').classList.remove('active');
                     document.getElementById('game-screen').classList.add('active');
@@ -1602,7 +1603,7 @@
         }
 
         function handleDrop(fromR, fromC, toR, toC) {
-            if (!currentPuzzle || !gameActive) return;
+            if (!currentPuzzle || !gameActive || solutionRevealed) return;
 
             // Check if correct piece moved to correct square
             const correctPiece = fromR === currentPuzzle.preforkPos.r && fromC === currentPuzzle.preforkPos.c;
@@ -1614,7 +1615,7 @@
                 showSuccess();
             } else {
                 playSound('buzzer-sound');
-                const targetSq = document.querySelector(`.square[data-row="${toR}"][data-col="${toC}"]`);
+                const targetSq = document.querySelector(`#chessboard .square[data-row="${toR}"][data-col="${toC}"]`);
                 if (targetSq) {
                     targetSq.classList.add('incorrect');
                     setTimeout(() => targetSq.classList.remove('incorrect'), 500);
@@ -1624,7 +1625,7 @@
 
         function showSuccess() {
             // Show the correct fork
-            const forkSq = document.querySelector(`.square[data-row="${currentPuzzle.forkPos.r}"][data-col="${currentPuzzle.forkPos.c}"]`);
+            const forkSq = document.querySelector(`#chessboard .square[data-row="${currentPuzzle.forkPos.r}"][data-col="${currentPuzzle.forkPos.c}"]`);
             forkSq.classList.add('correct');
 
             // Move piece visually
@@ -1651,6 +1652,36 @@
                 clearArrows();
                 newPuzzle();
             }, 800);
+        }
+
+        function handleRevealNext() {
+            if (!currentPuzzle || !gameActive) return;
+
+            if (!solutionRevealed) {
+                // Reveal the solution
+                solutionRevealed = true;
+                clearInterval(timerInterval);
+
+                // Highlight fork square
+                const forkSq = document.querySelector(`#chessboard .square[data-row="${currentPuzzle.forkPos.r}"][data-col="${currentPuzzle.forkPos.c}"]`);
+                if (forkSq) forkSq.classList.add('correct');
+
+                // Draw arrow from piece to fork square
+                drawArrow(currentPuzzle.preforkPos.r, currentPuzzle.preforkPos.c,
+                          currentPuzzle.forkPos.r, currentPuzzle.forkPos.c);
+                // Draw arrows from fork square to forked pieces
+                drawArrow(currentPuzzle.forkPos.r, currentPuzzle.forkPos.c,
+                          currentPuzzle.target1Pos.r, currentPuzzle.target1Pos.c);
+                drawArrow(currentPuzzle.forkPos.r, currentPuzzle.forkPos.c,
+                          currentPuzzle.target2Pos.r, currentPuzzle.target2Pos.c);
+
+                // Change button to "Next"
+                document.getElementById('reveal-btn').textContent = 'Next';
+            } else {
+                // Load next puzzle
+                clearArrows();
+                newPuzzle();
+            }
         }
 
         function drawArrow(fromR, fromC, toR, toC) {
@@ -1713,15 +1744,18 @@
             // Pause timer
             clearInterval(timerInterval);
 
+            // Reset state for new puzzle
+            solutionRevealed = false;
+            document.getElementById('reveal-btn').textContent = 'Reveal Solution';
+
             // Check if we have a pre-generated puzzle in the queue
             if (puzzleQueue.length > 0) {
                 // Instant transition - no loading screen needed!
                 currentPuzzle = puzzleQueue.shift();
 
                 // Reset timer for new puzzle
-                timeLeft = timeLimit;
-                document.getElementById('timer').textContent = timeLeft;
-                document.querySelector('.timer').classList.remove('urgent');
+                timeElapsed = 0;
+                document.getElementById('timer').textContent = formatTime(timeElapsed);
 
                 renderBoard();
 
@@ -1741,31 +1775,26 @@
             }
         }
 
-        function updateTimer() {
-            timeLeft--;
-            document.getElementById('timer').textContent = timeLeft;
-
-            if (timeLeft <= 5) {
-                document.querySelector('.timer').classList.add('urgent');
-            }
-
-            if (timeLeft <= 0) {
-                endGame();
-            }
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
         }
 
-        function startGame(newTimeLimit) {
-            // If time limit provided, update the setting
-            if (newTimeLimit) {
-                timeLimit = newTimeLimit;
-            }
+        function updateTimer() {
+            timeElapsed++;
+            document.getElementById('timer').textContent = formatTime(timeElapsed);
+        }
 
+        function startGame() {
             score = 0;
-            timeLeft = timeLimit;
+            timeElapsed = 0;
+            solutionRevealed = false;
 
             document.getElementById('score').textContent = score;
-            document.getElementById('timer').textContent = timeLeft;
-            document.querySelector('.timer').classList.remove('urgent');
+            document.getElementById('timer').textContent = formatTime(timeElapsed);
+            document.getElementById('reveal-btn').textContent = 'Reveal Solution';
 
             // Hide other screens
             document.getElementById('splash-screen').classList.remove('active');
@@ -1800,9 +1829,10 @@
             jingle.play().catch(e => console.log('Jingle play failed:', e));
         }
 
-        function endGame() {
+        function quitGame() {
             gameActive = false;
             clearInterval(timerInterval);
+            clearArrows();
 
             try {
                 const jingle = document.getElementById('jingle-sound');
@@ -1942,13 +1972,7 @@
         }
 
         function getStorageKey() {
-            return 'forkTrainerScores_' + timeLimit;
-        }
-
-        function getDifficultyName() {
-            if (timeLimit === 60) return 'Easy';
-            if (timeLimit === 15) return 'Hard';
-            return 'Medium';
+            return 'forkTrainerScores';
         }
 
         function getHighScores() {
@@ -1982,7 +2006,7 @@
                 return;
             }
 
-            document.getElementById('highscores-title').textContent = `High Scores (${getDifficultyName()})`;
+            document.getElementById('highscores-title').textContent = 'High Scores';
             list.innerHTML = `<table class="highscore-list-table">` + scores.map((entry, i) => `
                 <tr>
                     <td>#${i + 1}</td>
