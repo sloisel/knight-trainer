@@ -854,8 +854,8 @@
 
             let forkRows, forkCols;
             if (forkerType === W_BISHOP) {
-                forkRows = [2];
-                forkCols = [1, 2, 3, 4, 5, 6];
+                forkRows = [2, 3, 4];
+                forkCols = [2, 3, 4, 5];
             } else if (forkerType === W_PAWN) {
                 forkRows = [3, 4, 5];
                 forkCols = [1, 2, 3, 4, 5, 6];
@@ -873,11 +873,9 @@
             if (attacks.length < 2) return null;
 
             const isValidTargetPos = (pos, pieceType, isBishopFork = false) => {
-                if (isBishopFork) {
-                    if (pos.r < 1 || pos.r > 3) return false;
-                } else {
-                    if (pos.r > 4) return false;
-                }
+                // Targets should be on black's half (rows 0-4)
+                if (pos.r > 4) return false;
+                // Bishops shouldn't be on back rank
                 if ((pieceType === B_BISHOP) && (pos.r === 0 || pos.r === 7)) return false;
                 return true;
             };
