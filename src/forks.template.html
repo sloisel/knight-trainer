@@ -975,6 +975,9 @@
                         if (pr < 0 || pr >= 8 || pc < 0 || pc >= 8) break;
                         if (board[pr][pc] !== EMPTY) break;
 
+                        // Bishop must start on white's half (rows 4-7, ranks 4-1)
+                        if (pr < 4) continue;
+
                         const testBoard = copyBoard(board);
                         if (!canPieceCapture(W_BISHOP, pr, pc, target1Pos.r, target1Pos.c, testBoard) &&
                             !canPieceCapture(W_BISHOP, pr, pc, target2Pos.r, target2Pos.c, testBoard)) {
